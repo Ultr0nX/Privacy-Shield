@@ -1,7 +1,11 @@
 {
   "dependencies": {
     "@mediapipe/camera_utils": "^0.3.1675466862",
-    "@mediapipe/face_mesh": "^0.4.1633559619"
+    "@mediapipe/face_mesh": "^0.4.1633559619",
+    "assert": "^2.1.0",
+    "buffer": "^6.0.3",
+    "circomlibjs": "^0.1.7",
+    "stream-browserify": "^3.0.0"
   },
   "scripts": {
     "start": "cd ui && npm start"
