@@ -1,0 +1,19 @@
+{
+  "dependencies": {
+    "@mediapipe/camera_utils": "^0.3.1675466862",
+    "@mediapipe/face_mesh": "^0.4.1633559619",
+    "assert": "^2.1.0",
+    "buffer": "^6.0.3",
+    "circomlibjs": "^0.1.7",
+    "ethers": "^6.16.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-scripts": "^5.0.1",
+    "snarkjs": "^0.7.6",
+    "stream-browserify": "^3.0.0",
+    "web-vitals": "^5.1.0"
+  },
+  "scripts": {
+    "start": "cd ui && npm start"
+  }
+}
