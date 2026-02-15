@@ -54,7 +54,8 @@ struct AppState {
 abigen!(
     PrivacyShield,
     r#"[
-        function verify(uint256[2] calldata a, uint256[2][2] calldata b, uint256[2] calldata c, uint256[1] calldata input) external view returns (bool)
+        function verify(uint256[2] calldata a, uint256[2][2] calldata b, uint256[2] calldata c, uint256[1] calldata input) external returns (bool)
+        event DataReceived(uint256[2] a, uint256[2][2] b, uint256[2] c, uint256 nullifier, address sender)
     ]
     "#,
 );
@@ -206,33 +207,33 @@ async fn submit_to_blockchain(
     // Create contract instance
     let contract = PrivacyShield::new(state.contract_address, state.client.clone());
 
-    info!("📝 Calling verify function on contract...");
+    info!("📝 Sending transaction to verify function on contract...");
     
-    // Call the verify function with real proof data
-    let call = contract.verify(a, b, c, input);
+    // Create the contract call
+    let tx_call = contract.verify(a, b, c, input);
     
-    // Try to call the blockchain, but handle the case where it's not available
-    match call.call().await {
-        Ok(result) => {
-            info!("🎉 Verification result: {}", result);
-            
-            // In Phase 2+, you would actually send a transaction:
-            // let pending_tx = call.send().await?;
-            // let receipt = pending_tx.await?;
-            // let tx_hash = receipt.transaction_hash;
-            
-            let simulated_tx_hash = format!("0x{:064x}", rand::random::<u64>());
-            Ok(simulated_tx_hash)
-        }
-        Err(e) => {
-            info!("⚠️  Blockchain call failed (expected if no local node running): {}", e);
-            info!("📦 Mock mode: Simulating successful transaction for testing");
-            
-            // Return a simulated hash for testing when blockchain isn't available
-            let simulated_tx_hash = format!("0x{:064x}", rand::random::<u64>());
-            Ok(simulated_tx_hash)
+    // Send actual transaction with real proof data
+    let pending_tx = tx_call.send().await?;
+    
+    info!("⏳ Transaction sent, waiting for confirmation...");
+    
+    // Wait for transaction receipt
+    let receipt = pending_tx.await?.ok_or_else(|| anyhow::anyhow!("Transaction dropped from mempool"))?;
+    
+    let tx_hash = format!("0x{:x}", receipt.transaction_hash);
+    info!("✅ Transaction confirmed: {}", tx_hash);
+    info!("📊 Gas used: {}", receipt.gas_used.unwrap_or_default());
+    info!("📦 Block number: {}", receipt.block_number.unwrap_or_default());
+    
+    // Log events emitted
+    if !receipt.logs.is_empty() {
+        info!("📢 Events emitted: {} logs", receipt.logs.len());
+        for (i, log) in receipt.logs.iter().enumerate() {
+            info!("   Log {}: {} topics", i, log.topics.len());
         }
     }
+    
+    Ok(tx_hash)
 }
 
 // Parse Groth16 proof components from Circom format to Solidity format
