@@ -20,6 +20,9 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
+    "copy-circuit": "node -e \"const fs=require('fs');const src='../circuits/privacy_js/privacy.wasm';const dst='public/circuit.wasm';if(!fs.existsSync(dst)||fs.statSync(src).size!==fs.statSync(dst).size){fs.copyFileSync(src,dst);console.log('✅ circuit.wasm copied to public/');}else{console.log('✅ circuit.wasm already up to date');}\"",
+    "prestart": "npm run copy-circuit",
+    "prebuild": "npm run copy-circuit",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
