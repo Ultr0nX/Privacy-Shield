@@ -1,6 +1,66 @@
+# macOS
 .DS_Store
-node_modules/
+.AppleDouble
+.LSOverride
+
+# Environment Files (NEVER commit secrets)
 .env
-dist
-build
+.env.*
+!.env.example
+
+# =============================
+# Node / React (ui/)
+# =============================
+node_modules/
+dist/
+build/
+npm-debug.log*
+yarn-error.log*
+
+# =============================
+# Rust (relayer/)
+# =============================
+target/
+**/*.rs.bk
+# Note: Cargo.lock is intentionally kept for binary crates (reproducible builds)
+
+# =============================
+# Foundry (contracts/)
+# =============================
+out/
+cache/
+# Keep broadcast/ if you want deployment records, else uncomment:
+# broadcast/
+
+# =============================
+# ZK Circuit Large Files
+# =============================
+# Powers of Tau ceremony files (very large, download separately)
+*.ptau
+
+# Intermediate proving keys (not final)
+circuits/privacy_0000.zkey
+circuits/privacy_js/privacy.wasm
+
+# Witness files (intermediate computation, never commit)
+*.wtns
+
+# Large JSON dumps of proving keys
+circuits/circuit_final.zkey.json
+
+# =============================
+# Backup / Temp Files
+# =============================
+*_backup.*
+*_old.*
+*.bak
+*.tmp
+
+# =============================
+# IDE / Editor
+# =============================
+.vscode/
+.idea/
+*.swp
+*.swo
 
