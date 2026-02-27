@@ -29,8 +29,12 @@ target/
 # =============================
 out/
 cache/
-# Keep broadcast/ if you want deployment records, else uncomment:
-# broadcast/
+# Generated lockfiles
+foundry.lock
+**/foundry.lock
+
+# Foundry dependency libraries (managed as git submodules)
+contracts/privacy-shield/lib/
 
 # =============================
 # ZK Circuit Large Files
@@ -55,6 +59,15 @@ circuits/circuit_final.zkey.json
 *_old.*
 *.bak
 *.tmp
+# Files with spaces in name (usually accidental duplicates)
+*\ *.rs
+*\ *.js
+*\ *.sol
+
+# =============================
+# ZK Generated Symbol Files
+# =============================
+*.sym
 
 # =============================
 # IDE / Editor
