@@ -4,26 +4,7 @@ import { ethers } from "ethers";
 const ABI = [
     {
         "type": "function",
-        "name": "isRegistered",
-        "inputs": [
-            {
-                "name": "_identityCommitment",
-                "type": "uint256",
-                "internalType": "uint256"
-            }
-        ],
-        "outputs": [
-            {
-                "name": "",
-                "type": "bool",
-                "internalType": "bool"
-            }
-        ],
-        "stateMutability": "view"
-    },
-    {
-        "type": "function",
-        "name": "registerUser",
+        "name": "registerIdentity",
         "inputs": [
             {
                 "name": "_identityCommitment",
@@ -55,12 +36,12 @@ const ABI = [
     },
     {
         "type": "function",
-        "name": "walletRegistered",
+        "name": "usedNullifiers",
         "inputs": [
             {
                 "name": "",
-                "type": "address",
-                "internalType": "address"
+                "type": "uint256",
+                "internalType": "uint256"
             }
         ],
         "outputs": [
@@ -74,10 +55,10 @@ const ABI = [
     },
     {
         "type": "event",
-        "name": "UserRegistered",
+        "name": "IdentityRegistered",
         "inputs": [
             {
-                "name": "user",
+                "name": "wallet",
                 "type": "address",
                 "indexed": true,
                 "internalType": "address"
@@ -90,16 +71,35 @@ const ABI = [
             }
         ],
         "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "ActionVerified",
+        "inputs": [
+            {
+                "name": "nullifier",
+                "type": "uint256",
+                "indexed": true,
+                "internalType": "uint256"
+            },
+            {
+                "name": "timestamp",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
     }
 ];
 
-const CONTRACT_ADDRESS = "0xf73001eea8d0056Ff129C75B5a806B35Dc1C843C";
+const CONTRACT_ADDRESS = "0x54961E44f92b9CB64c5B8506163245ca76BefFCF";
 
 export const registerOnChain = async (signer, commitment) => {
   const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
   try {
     const bigIntCommitment = window.BigInt(commitment);
-    const tx = await contract.registerUser(bigIntCommitment);
+    const tx = await contract.registerIdentity(bigIntCommitment);
     console.log("Transaction Sent:", tx.hash);
     await tx.wait();
     return tx.hash;
@@ -113,7 +113,7 @@ export const checkRegistrationStatus = async (signer, commitment) => {
   const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
   try {
     // Explicit BigInt conversion for the query
-    const isReg = await contract.isRegistered(window.BigInt(commitment));
+    const isReg = await contract.registeredIdentities(window.BigInt(commitment));
     return isReg;
   } catch (error) {
     console.error("Contract query error:", error);

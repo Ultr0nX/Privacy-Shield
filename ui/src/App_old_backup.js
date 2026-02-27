@@ -18,101 +18,247 @@ export default function App() {
   const [proof, setProof] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState("Idle");
-  const [txHash, setTxHash] = useState("");
   
   // Initialize biometric processor on mount
   useEffect(() => {
     biometric.initializePoseidon();
   }, []);
-  
-  // Check registration status when commitment is available
-  useEffect(() => {
-    if (biometric.commitment && biometric.verified) {
-      registration.checkStatus();
-    }
-  }, [biometric.commitment, biometric.verified]);
-  
-  // Wallet connection handler
+
   const handleConnect = async () => {
     try {
-      await wallet.connect();
-      setVerificationStatus("Wallet Connected");
+      const { address, signer: userSigner } = await connectWallet();
+      setAccount(address);
+      setSigner(userSigner);
+      setStatus("Wallet Connected");
     } catch (err) {
       alert(err.message);
     }
   };
-  
-  // Registration handler
+
+  const formatForVerifier = (proof, publicSignals) => {
+    const p = proof;
+    const s = publicSignals;
+    
+    // This format is what most Solidity verifiers expect: [a, b, c, signals]
+    const formatted = [
+      p.pi_a[0], p.pi_a[1],
+      p.pi_b[0][1], p.pi_b[0][0], p.pi_b[1][1], p.pi_b[1][0],
+      p.pi_c[0], p.pi_c[1],
+      ...s
+    ];
+    
+    console.log("📋 COPY THIS TO VERIFIER:", JSON.stringify(formatted));
+    return formatted;
+  };
+
   const handleRegister = async () => {
+    if (!commitment) {
+      alert("⚠️ No identity commitment found. Please scan your face first.");
+      return;
+    }
+    
+    setStatus("📝 Registering Identity on Blockchain...");
+    
     try {
-      setVerificationStatus("📝 Registering Identity...");
-      const result = await registration.register();
-      setTxHash(result.tx_hash);
-      setVerificationStatus("✅ Successfully Registered!");
-      alert(`✅ Identity Registered!\n\nTransaction: ${result.tx_hash}`);
+      const response = await fetch('http://localhost:3001/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identityCommitment: commitment })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setStatus("✅ Successfully Registered!");
+        setIsRegistered(true);
+        setTxHash(result.tx_hash);
+        alert(`✅ Identity Registered!\n\nTransaction: ${result.tx_hash}`);
+      } else {
+        setStatus(`❌ Registration Failed: ${result.message}`);
+        alert(`Registration Failed\n\n${result.message}`);
+      }
     } catch (err) {
-      setVerificationStatus("❌ Registration Failed");
-      alert(`Registration Failed\n\n${err.message}`);
+      setStatus("❌ Registration Failed");
+      console.error("Registration error:", err);
+      alert(`Registration Error\n\n${err.message}`);
     }
   };
-  
-  // Full verification handler
+
+  /**
+   * FIX: handleLandmarks now performs double-hashing
+   * secretId = Poseidon(biometric_ratios)
+   * commitment = Poseidon(secretId)
+   */
+  const handleLandmarks = async (landmarks) => {
+    if (verified || !account || !landmarks) return;
+    
+    // Safety check to prevent the 'width' of null error
+    try {
+      const ratios = getRatios(landmarks);
+      bufferRef.current.push(ratios);
+      setProgress(Math.min(100, Math.floor((bufferRef.current.length / SCAN_THRESHOLD) * 100)));
+
+      if (bufferRef.current.length >= SCAN_THRESHOLD) {
+        setStatus("Finalizing Identity...");
+        if (!poseidonRef.current) poseidonRef.current = await initPoseidon();
+
+        const avgRatios = bufferRef.current[0].map((_, i) => 
+          bufferRef.current.reduce((sum, row) => sum + row[i], 0) / bufferRef.current.length
+        );
+
+        const quantizedRatios = quantize(avgRatios);
+        
+        // 1. First Hash: Condensed Biometrics into one Private Secret
+        const firstHash = poseidonRef.current(quantizedRatios);
+        const privateSecret = poseidonRef.current.F.toString(firstHash);
+        
+        // 2. Second Hash: Secret into Public Commitment (matches circuit logic)
+        // IMPORTANT: Keep as BigInt field element, not string
+        const secondHash = poseidonRef.current([firstHash]);
+        const publicCommitment = poseidonRef.current.F.toString(secondHash);
+
+        setSecretId(privateSecret);
+        setCommitment(publicCommitment);
+        setVerified(true);
+        setStatus("✅ Biometric Identity Captured");
+        
+        // Check registration status after capturing identity
+        checkRegistration(publicCommitment);
+      }
+    } catch (err) {
+      console.warn("Frame skipped:", err.message);
+    }
+  };
+
+  /**
+   * Check if identity is already registered on-chain
+   */
+  const checkRegistration = async (commitmentValue) => {
+    setCheckingRegistration(true);
+    setStatus("🔍 Checking Registration Status...");
+    
+    try {
+      const response = await fetch('http://localhost:3001/check-registration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identityCommitment: commitmentValue })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setIsRegistered(result.registered);
+        setStatus(result.registered 
+          ? "✅ Identity Already Registered" 
+          : "📝 Please Register Your Identity"
+        );
+      } else {
+        console.error("Registration check failed:", result.error);
+        setStatus("⚠️ Could not verify registration status");
+      }
+    } catch (err) {
+      console.error("Failed to check registration:", err);
+      setStatus("⚠️ Could not verify registration status");
+    } finally {
+      setCheckingRegistration(false);
+    }
+  };
+
+  /**
+   * FIX: Proof generation using the single secretId
+   */
   const handleFullVerification = async () => {
-    if (!biometric.commitment || !appAddress || !biometric.secretId) {
+    if (!commitment || !appAddress || !secretId) {
       alert("⚠️ Please complete face scan and enter App Address first.");
       return;
     }
 
-    setVerificationStatus("🔐 Initiating Security Verification...");
-    
+    setStatus("🔐 Initiating Security Verification...");
     try {
-      // Get Poseidon instance for nullifier calculation
-      await biometric.initializePoseidon();
-      
-      // Calculate nullifier
-      const nullifier = calculateNullifier(
-        biometric.secretId,
-        appAddress,
-        wallet.account
+      // Skip registration check for local testing
+      // const isReg = await checkRegistrationStatus(signer, commitment);
+      // if (!isReg) {
+      //   setStatus("❌ Identity not registered on Sepolia.");
+      //   return;
+      // }
+
+      const userAddrBigInt = window.BigInt(account).toString();
+      const appAddrBigInt = window.BigInt(appAddress).toString();
+
+      // Nullifier = Poseidon(secretId, app, wallet)
+      // IMPORTANT: Pass as BigInt field elements, not strings
+      const nHash = poseidonRef.current([
+        window.BigInt(secretId),
+        window.BigInt(appAddrBigInt),
+        window.BigInt(userAddrBigInt)
+      ]);
+      const nullifierStr = poseidonRef.current.F.toString(nHash);
+
+      const zkInputs = {
+        identityCommitment: commitment.toString(),
+        app_address: appAddrBigInt,
+        user_wallet: userAddrBigInt,
+        nullifier: nullifierStr,
+        secretId: secretId.toString()
+      };
+
+      console.log("Inputs for SnarkJS:", zkInputs);
+
+      setStatus("🧮 Generating Zero-Knowledge Proof...");
+      const { proof: zkProof, publicSignals } = await window.snarkjs.groth16.fullProve(
+        zkInputs, 
+        "/circuit.wasm", 
+        "/circuit_final.zkey"
       );
-      
-      // Prepare circuit inputs
-      const zkInputs = prepareCircuitInputs(
-        biometric.commitment,
-        appAddress,
-        wallet.account,
-        nullifier,
-        biometric.secretId
-      );
-      
-      console.log("Circuit inputs:", zkInputs);
-      
-      // Generate proof
-      setVerificationStatus("🧮 Generating Zero-Knowledge Proof...");
-      const { proof: zkProof, publicSignals } = await generateProof(zkInputs);
+
       setProof(zkProof);
+      console.log("Proof:", zkProof);
+      console.log("Public Signals:", publicSignals);
       
-      // Format proof for blockchain
-      const { proof: proofHex, publicSignals: publicSignalsHex } = formatProofForChain(zkProof, publicSignals);
+      // Convert proof values to hex strings (fixes ethers.js encoding issue)
+      // IMPORTANT: pi_b sub-arrays must be reversed for Solidity (G2 point encoding)
+      const toHex = (val) => '0x' + window.BigInt(val).toString(16).padStart(64, '0');
+      const proofHex = {
+        pi_a: zkProof.pi_a.slice(0, 2).map(toHex),
+        pi_b: zkProof.pi_b.slice(0, 2).map(row => row.slice(0, 2).reverse().map(toHex)),
+        pi_c: zkProof.pi_c.slice(0, 2).map(toHex),
+        protocol: zkProof.protocol,
+        curve: zkProof.curve
+      };
+      const publicSignalsHex = publicSignals.map(toHex);
       
-      console.log("Formatted proof:", proofHex);
-      console.log("Formatted signals:", publicSignalsHex);
+      console.log("Proof (hex):", proofHex);
+      console.log("Public Signals (hex):", publicSignalsHex);
       
-      // Submit to relayer
-      setVerificationStatus("📡 Transmitting to Blockchain...");
-      const result = await submitProof(proofHex, publicSignalsHex);
+      // Send proof to relayer
+      setStatus("📡 Transmitting to Blockchain Relayer...");
       
-      if (result.success) {
-        setTxHash(result.tx_hash);
-        setVerificationStatus("✅ Verification Complete!");
+      const relayerResponse = await fetch('http://localhost:3001/relay', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          proof: proofHex,
+          publicSignals: publicSignalsHex
+        })
+      });
+
+      const relayerResult = await relayerResponse.json();
+      console.log("Relayer Response:", relayerResult);
+
+      if (relayerResult.success) {
+        setStatus("✅ Verification Complete!");
+        setTxHash(relayerResult.tx_hash);
         setShowModal(true);
       } else {
-        throw new Error(result.message);
+        setStatus(`❌ Verification Failed: ${relayerResult.message}`);
+        alert(`Security Verification Failed\n\n${relayerResult.message}`);
       }
       
     } catch (err) {
-      setVerificationStatus("❌ Verification Failed");
-      console.error("Verification error:", err);
+      setStatus("❌ Security Verification Failed");
+      console.error(err);
       alert(`Verification Error\n\n${err.message}`);
     }
   };
@@ -122,30 +268,29 @@ export default function App() {
       <nav style={styles.nav}>
         <div style={styles.logo}>PrivacyShield ZK</div>
         <button style={styles.connectBtn} onClick={handleConnect}>
-          {wallet.account ? `${wallet.account.substring(0,6)}...` : "Connect Wallet"}
+          {account ? `${account.substring(0,6)}...` : "Connect Wallet"}
         </button>
       </nav>
 
       <div style={styles.card}>
         <h1>Biometric ZK-ID</h1>
         
-        {!wallet.isConnected ? (
+        {!account ? (
            <button style={styles.button} onClick={handleConnect}>Connect Wallet</button>
         ) : !started ? (
            <button style={styles.button} onClick={() => setStarted(true)}>Start Face Scan</button>
-        ) : !biometric.verified ? (
+        ) : !verified ? (
           <>
-            <FaceScanner onLandmarksDetected={biometric.processLandmarks} setStatus={() => {}} />
-            <div style={styles.status}> {biometric.status} ({biometric.progress}%) </div>
-            <div style={styles.qualityInfo}>✅ Valid frames: {biometric.validFrames}</div>
+            <FaceScanner onLandmarksDetected={handleLandmarks} setStatus={setStatus} />
+            <div style={styles.status}> {status} ({progress}%) </div>
           </>
         ) : (
           <div style={styles.successBox}>
-            <p style={styles.smallText}><strong>ID Commitment:</strong> {biometric.commitment.substring(0, 40)}...</p>
+            <p style={styles.smallText}><strong>ID Commitment:</strong> {commitment.substring(0, 40)}...</p>
             
-            {registration.checking ? (
+            {checkingRegistration ? (
               <div style={styles.status}>🔍 Checking Registration Status...</div>
-            ) : !registration.isRegistered ? (
+            ) : !isRegistered ? (
               // Show Register button if not registered
               <>
                 <div style={{...styles.infoBox, marginBottom: '15px'}}>
@@ -155,12 +300,8 @@ export default function App() {
                     <p style={{margin: '5px 0 0 0', fontSize: '12px', color: '#94a3b8'}}>Register your biometric identity on-chain before verification.</p>
                   </div>
                 </div>
-                <button 
-                  style={styles.regButton} 
-                  onClick={handleRegister}
-                  disabled={registration.registering}
-                >
-                  {registration.registering ? "⏳ Registering..." : "📝 Register Identity on Blockchain"}
+                <button style={styles.regButton} onClick={handleRegister}>
+                  📝 Register Identity on Blockchain
                 </button>
               </>
             ) : (
@@ -175,12 +316,9 @@ export default function App() {
                 </div>
                 <div style={styles.divider} />
                 <h3>🔐 Security Verification</h3>
-                <p style={{fontSize: '12px', color: '#94a3b8', margin: '0 0 10px 0'}}>
-                  Enter a unique app address for each verification context.
-                </p>
                 <input 
                   style={styles.input}
-                  placeholder="App Address (0x1234...)"
+                  placeholder="App Address (0x...)"
                   value={appAddress}
                   onChange={(e) => setAppAddress(e.target.value)}
                 />
@@ -191,7 +329,6 @@ export default function App() {
                   🛡️ Verify Identity
                 </button>
                 {proof && <div style={styles.resultBox}>✅ Proof Generated Successfully</div>}
-                <div style={styles.statusText}>{verificationStatus}</div>
               </>
             )}
           </div>
@@ -245,9 +382,7 @@ const styles = {
   button: { width: "100%", padding: 14, borderRadius: 10, background: "#22c55e", cursor: "pointer", border: "none", fontWeight: "bold", fontSize: "16px" },
   regButton: { width: "100%", padding: 12, borderRadius: 8, background: "#3b82f6", color: "#fff", cursor: "pointer", border: "none", fontWeight: "bold", marginBottom: "8px" },
   input: { width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #334155", background: "#1e293b", color: "#fff", marginBottom: "10px", boxSizing: "border-box" },
-  status: { marginTop: 16, fontSize: 14, color: "#facc15", fontWeight: "500" },
-  statusText: { marginTop: 12, fontSize: 13, color: "#94a3b8" },
-  qualityInfo: { marginTop: 8, fontSize: 12, color: "#22c55e" },
+  status: { marginTop: 16, fontSize: 14, color: "#facc15" },
   successBox: { marginTop: 10, textAlign: "left" },
   smallText: { fontSize: "10px", color: "#94a3b8", wordBreak: "break-all", marginBottom: "10px" },
   divider: { height: "1px", background: "#1e293b", margin: "20px 0" },

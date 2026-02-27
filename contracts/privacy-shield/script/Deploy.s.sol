@@ -12,9 +12,9 @@ contract DeployScript is Script {
         
         vm.startBroadcast(deployerPrivateKey);
         
-        // Deploy Verifier
-        Verifier verifier = new Verifier();
-        console.log("Verifier deployed at:", address(verifier));
+        // Deploy Groth16Verifier
+        Groth16Verifier verifier = new Groth16Verifier();
+        console.log("Groth16Verifier deployed at:", address(verifier));
         
         // Deploy PrivacyShield
         PrivacyShield shield = new PrivacyShield(address(verifier));
