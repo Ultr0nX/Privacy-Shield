@@ -93,7 +93,7 @@ const ABI = [
     }
 ];
 
-const CONTRACT_ADDRESS = "0x54961E44f92b9CB64c5B8506163245ca76BefFCF";
+export const CONTRACT_ADDRESS = "0xcd91023700b1261450aa90042e9d62426beab45b";
 
 export const registerOnChain = async (signer, commitment) => {
   const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);

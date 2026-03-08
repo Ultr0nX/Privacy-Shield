@@ -5,6 +5,10 @@ import { useWallet } from "./hooks/useWallet";
 import { useRegistration } from "./hooks/useRegistration";
 import { generateProof, calculateNullifier, prepareCircuitInputs, formatProofForChain } from "./services/proofService";
 import { submitProof } from "./services/relayerService";
+import { CONTRACT_ADDRESS } from "./utils/contract";
+
+// Use the deployed contract address — not user-editable
+const APP_ADDRESS = CONTRACT_ADDRESS;
 
 export default function App() {
   // Custom hooks for separated concerns
@@ -14,10 +18,9 @@ export default function App() {
   
   // Local UI state
   const [started, setStarted] = useState(false);
-  const [appAddress, setAppAddress] = useState("");
   const [proof, setProof] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [verificationStatus, setVerificationStatus] = useState("Idle");
+  const [verificationStatus, setVerificationStatus] = useState("SYSTEM READY");
   const [txHash, setTxHash] = useState("");
   
   // Initialize biometric processor on mount
@@ -45,25 +48,25 @@ export default function App() {
   // Registration handler
   const handleRegister = async () => {
     try {
-      setVerificationStatus("📝 Registering Identity...");
+      setVerificationStatus("REGISTERING IDENTITY ON-CHAIN...");
       const result = await registration.register();
       setTxHash(result.tx_hash);
-      setVerificationStatus("✅ Successfully Registered!");
-      alert(`✅ Identity Registered!\n\nTransaction: ${result.tx_hash}`);
+      setVerificationStatus("IDENTITY REGISTERED");
+      alert(`Identity Registered!\n\nTransaction: ${result.tx_hash}`);
     } catch (err) {
-      setVerificationStatus("❌ Registration Failed");
+      setVerificationStatus("REGISTRATION FAILED");
       alert(`Registration Failed\n\n${err.message}`);
     }
   };
   
   // Full verification handler
   const handleFullVerification = async () => {
-    if (!biometric.commitment || !appAddress || !biometric.secretId) {
-      alert("⚠️ Please complete face scan and enter App Address first.");
+    if (!biometric.commitment || !biometric.secretId) {
+      alert("⚠️ Please complete face scan first.");
       return;
     }
 
-    setVerificationStatus("🔐 Initiating Security Verification...");
+    setVerificationStatus("INITIATING SECURE VERIFICATION...");
     
     try {
       // Get Poseidon instance for nullifier calculation
@@ -72,14 +75,14 @@ export default function App() {
       // Calculate nullifier
       const nullifier = calculateNullifier(
         biometric.secretId,
-        appAddress,
+        APP_ADDRESS,
         wallet.account
       );
       
       // Prepare circuit inputs
       const zkInputs = prepareCircuitInputs(
         biometric.commitment,
-        appAddress,
+        APP_ADDRESS,
         wallet.account,
         nullifier,
         biometric.secretId
@@ -88,7 +91,7 @@ export default function App() {
       console.log("Circuit inputs:", zkInputs);
       
       // Generate proof
-      setVerificationStatus("🧮 Generating Zero-Knowledge Proof...");
+      setVerificationStatus("GENERATING ZERO-KNOWLEDGE PROOF...");
       const { proof: zkProof, publicSignals } = await generateProof(zkInputs);
       setProof(zkProof);
       
@@ -99,136 +102,179 @@ export default function App() {
       console.log("Formatted signals:", publicSignalsHex);
       
       // Submit to relayer
-      setVerificationStatus("📡 Transmitting to Blockchain...");
+      setVerificationStatus("TRANSMITTING TO BLOCKCHAIN...");
       const result = await submitProof(proofHex, publicSignalsHex);
       
       if (result.success) {
         setTxHash(result.tx_hash);
-        setVerificationStatus("✅ Verification Complete!");
+        setVerificationStatus("ACCESS GRANTED");
         setShowModal(true);
       } else {
         throw new Error(result.message);
       }
       
     } catch (err) {
-      setVerificationStatus("❌ Verification Failed");
+      setVerificationStatus("VERIFICATION FAILED");
       console.error("Verification error:", err);
       alert(`Verification Error\n\n${err.message}`);
     }
   };
 
+  // Derive current step index for the step tracker
+  const currentStep = !wallet.isConnected ? 0 : !started ? 1 : !biometric.verified ? 2 : !registration.isRegistered ? 3 : 4;
+  const steps = ["CONNECT", "ACTIVATE", "SCAN", "REGISTER", "VERIFY"];
+
   return (
     <div style={styles.page}>
+      {/* Top nav */}
       <nav style={styles.nav}>
-        <div style={styles.logo}>PrivacyShield ZK</div>
-        <button style={styles.connectBtn} onClick={handleConnect}>
-          {wallet.account ? `${wallet.account.substring(0,6)}...` : "Connect Wallet"}
-        </button>
+        <div style={styles.logoWrap}>
+          <span style={styles.shieldIcon}>⬡</span>
+          <span style={styles.logo}>PRIVACY<span style={styles.logoAccent}>SHIELD</span></span>
+        </div>
+        <div style={styles.navRight}>
+          <span style={styles.networkBadge}>SEPOLIA TESTNET</span>
+          <button style={styles.connectBtn} onClick={handleConnect}>
+            {wallet.account ? (
+              <><span style={styles.dot}/>{wallet.account.substring(0,6)}...{wallet.account.slice(-4)}</>
+            ) : "CONNECT WALLET"}
+          </button>
+        </div>
       </nav>
 
+      {/* Step tracker */}
+      <div style={styles.stepBar}>
+        {steps.map((s, i) => (
+          <React.Fragment key={s}>
+            <div style={styles.stepWrap}>
+              <div style={i < currentStep ? styles.stepDone : i === currentStep ? styles.stepActive : styles.stepInactive}>
+                {i < currentStep ? "✓" : i + 1}
+              </div>
+              <span style={i === currentStep ? styles.stepLabelActive : styles.stepLabel}>{s}</span>
+            </div>
+            {i < steps.length - 1 && <div style={i < currentStep ? styles.connectorDone : styles.connector}/>}
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* Main card */}
       <div style={styles.card}>
-        <h1>Biometric ZK-ID</h1>
+        {/* Header */}
+        <div style={styles.cardHeader}>
+          <div style={styles.headerIcon}>🔐</div>
+          <div>
+            <div style={styles.cardTitle}>BIOMETRIC ZK-ID</div>
+            <div style={styles.cardSub}>Zero-Knowledge Identity Protocol</div>
+          </div>
+        </div>
+
+        {/* Contract badge */}
+        <div style={styles.contractBadge}>
+          <span style={styles.contractLabel}>CONTRACT</span>
+          <span style={styles.contractAddr}>{APP_ADDRESS.substring(0,10)}...{APP_ADDRESS.slice(-8)}</span>
+          <span style={styles.verifiedTag}>VERIFIED</span>
+        </div>
+
+        <div style={styles.divider}/>
         
         {!wallet.isConnected ? (
-           <button style={styles.button} onClick={handleConnect}>Connect Wallet</button>
+          <div style={styles.section}>
+            <p style={styles.hint}>Connect your Ethereum wallet to begin authentication.</p>
+            <button style={styles.btnPrimary} onClick={handleConnect}>CONNECT WALLET</button>
+          </div>
         ) : !started ? (
-           <button style={styles.button} onClick={() => setStarted(true)}>Start Face Scan</button>
+          <div style={styles.section}>
+            <div style={styles.alertBox}>
+              <span style={styles.alertIcon}>●</span>
+              <span>Wallet: <code style={styles.mono}>{wallet.account.substring(0,10)}...{wallet.account.slice(-6)}</code></span>
+            </div>
+            <p style={styles.hint}>Activate the biometric scanner to capture your facial geometry.</p>
+            <button style={styles.btnGreen} onClick={() => setStarted(true)}>ACTIVATE SCANNER</button>
+          </div>
         ) : !biometric.verified ? (
-          <>
+          <div style={styles.section}>
+            <div style={styles.scanLabel}>FACIAL GEOMETRY CAPTURE</div>
             <FaceScanner onLandmarksDetected={biometric.processLandmarks} setStatus={() => {}} />
-            <div style={styles.status}> {biometric.status} ({biometric.progress}%) </div>
-            <div style={styles.qualityInfo}>✅ Valid frames: {biometric.validFrames}</div>
-          </>
+            <div style={styles.progressBar}>
+              <div style={{...styles.progressFill, width: `${biometric.progress}%`}}/>
+            </div>
+            <div style={styles.scanStatus}>{biometric.status} — {biometric.progress}%</div>
+            <div style={styles.frameCount}>Valid frames: {biometric.validFrames} / 20</div>
+          </div>
         ) : (
-          <div style={styles.successBox}>
-            <p style={styles.smallText}><strong>ID Commitment:</strong> {biometric.commitment.substring(0, 40)}...</p>
-            
+          <div style={styles.section}>
+            <div style={styles.commitBox}>
+              <span style={styles.commitLabel}>BIOMETRIC HASH</span>
+              <span style={styles.commitVal}>{biometric.commitment.substring(0, 18)}...{biometric.commitment.slice(-8)}</span>
+            </div>
+
             {registration.checking ? (
-              <div style={styles.status}>🔍 Checking Registration Status...</div>
+              <div style={styles.loadingRow}><span style={styles.spinner}/> CHECKING REGISTRATION...</div>
             ) : !registration.isRegistered ? (
-              // Show Register button if not registered
               <>
-                <div style={{...styles.infoBox, marginBottom: '15px'}}>
-                  <div style={styles.infoIcon}>ℹ️</div>
+                <div style={styles.infoBox}>
+                  <div style={styles.infoIcon}>!</div>
                   <div>
-                    <strong>First Time Setup Required</strong>
-                    <p style={{margin: '5px 0 0 0', fontSize: '12px', color: '#94a3b8'}}>Register your biometric identity on-chain before verification.</p>
+                    <div style={styles.infoTitle}>FIRST-TIME SETUP REQUIRED</div>
+                    <div style={styles.infoText}>Register your biometric identity on-chain before verification.</div>
                   </div>
                 </div>
                 <button 
-                  style={styles.regButton} 
+                  style={registration.registering ? styles.btnDisabled : styles.btnBlue}
                   onClick={handleRegister}
                   disabled={registration.registering}
                 >
-                  {registration.registering ? "⏳ Registering..." : "📝 Register Identity on Blockchain"}
+                  {registration.registering ? "REGISTERING..." : "REGISTER IDENTITY ON-CHAIN"}
                 </button>
               </>
             ) : (
-              // Show Verify section if already registered
               <>
-                <div style={{...styles.infoBox, marginBottom: '15px', background: '#064e3b', borderColor: '#22c55e'}}>
-                  <div style={styles.infoIcon}>✅</div>
+                <div style={{...styles.infoBox, borderColor: '#00ff88', background: 'rgba(0,255,136,0.06)'}}>
+                  <div style={{...styles.infoIcon, background: '#00ff88', color: '#0a0a0a'}}>✓</div>
                   <div>
-                    <strong>Identity Registered</strong>
-                    <p style={{margin: '5px 0 0 0', fontSize: '12px', color: '#6ee7b7'}}>You can now verify this identity for any application.</p>
+                    <div style={{...styles.infoTitle, color: '#00ff88'}}>IDENTITY REGISTERED</div>
+                    <div style={styles.infoText}>Biometric hash anchored on Sepolia. Ready for ZK proof.</div>
                   </div>
                 </div>
-                <div style={styles.divider} />
-                <h3>🔐 Security Verification</h3>
-                <p style={{fontSize: '12px', color: '#94a3b8', margin: '0 0 10px 0'}}>
-                  Enter a unique app address for each verification context.
-                </p>
-                <input 
-                  style={styles.input}
-                  placeholder="App Address (0x1234...)"
-                  value={appAddress}
-                  onChange={(e) => setAppAddress(e.target.value)}
-                />
-                <button 
-                  style={{...styles.button, background: '#8b5cf6', color: '#fff'}} 
-                  onClick={handleFullVerification}
-                >
-                  🛡️ Verify Identity
+                <div style={styles.divider}/>
+                <div style={styles.terminalBox}>
+                  <div style={styles.termLine}><span style={styles.termKey}>PROTOCOL</span><span style={styles.termVal}>Groth16 ZK-SNARK</span></div>
+                  <div style={styles.termLine}><span style={styles.termKey}>HASH FN</span><span style={styles.termVal}>Poseidon</span></div>
+                  <div style={styles.termLine}><span style={styles.termKey}>NETWORK</span><span style={styles.termVal}>Sepolia (11155111)</span></div>
+                  <div style={styles.termLine}><span style={styles.termKey}>NULLIFIER</span><span style={styles.termVal}>DERIVED</span></div>
+                </div>
+                <div style={styles.statusLine}>> {verificationStatus}</div>
+                <button style={styles.btnPurple} onClick={handleFullVerification}>
+                  VERIFY IDENTITY
                 </button>
-                {proof && <div style={styles.resultBox}>✅ Proof Generated Successfully</div>}
-                <div style={styles.statusText}>{verificationStatus}</div>
+                {proof && (
+                  <div style={styles.proofBox}>ZK PROOF GENERATED SUCCESSFULLY</div>
+                )}
               </>
             )}
           </div>
         )}
       </div>
-      
-      {/* Verification Success Modal */}
+
+      {/* Success Modal */}
       {showModal && (
         <div style={styles.modalOverlay} onClick={() => setShowModal(false)}>
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalIcon}>🎉</div>
-            <h2 style={styles.modalTitle}>Verification Complete!</h2>
-            <p style={styles.modalText}>Your identity has been successfully verified on the blockchain.</p>
-            
+            <div style={styles.modalShield}>⬡</div>
+            <div style={styles.modalTitle}>ACCESS GRANTED</div>
+            <div style={styles.modalSub}>Identity verified on-chain via zero-knowledge proof.</div>
             <div style={styles.txBox}>
-              <div style={styles.txLabel}>Transaction Hash:</div>
+              <div style={styles.txLabel}>TRANSACTION HASH</div>
               <div style={styles.txHash}>{txHash.substring(0, 20)}...{txHash.substring(txHash.length - 10)}</div>
             </div>
-            
-            <div style={styles.checkmarks}>
-              <div style={styles.checkItem}>
-                <span style={styles.checkIcon}>✓</span>
-                <span>Biometric Data Verified</span>
-              </div>
-              <div style={styles.checkItem}>
-                <span style={styles.checkIcon}>✓</span>
-                <span>Zero-Knowledge Proof Generated</span>
-              </div>
-              <div style={styles.checkItem}>
-                <span style={styles.checkIcon}>✓</span>
-                <span>Blockchain Transaction Confirmed</span>
-              </div>
+            <div style={styles.checkList}>
+              {["Biometric Challenge Passed","ZK Proof Verified On-Chain","Nullifier Recorded (Replay-Proof)"].map(txt => (
+                <div key={txt} style={styles.checkRow}>
+                  <span style={styles.checkMark}>✓</span>{txt}
+                </div>
+              ))}
             </div>
-            
-            <button style={styles.modalButton} onClick={() => setShowModal(false)}>
-              Close
-            </button>
+            <button style={styles.btnPurple} onClick={() => setShowModal(false)}>CLOSE</button>
           </div>
         </div>
       )}
@@ -237,35 +283,99 @@ export default function App() {
 }
 
 const styles = {
-  page: { minHeight: "100vh", background: "#020617", display: "flex", flexDirection: "column", alignItems: "center", color: "#e5e7eb", fontFamily: "sans-serif" },
-  nav: { width: '100%', display: "flex", justifyContent: "space-between", padding: "20px 40px", boxSizing: 'border-box', borderBottom: "1px solid #1e293b" },
-  logo: { fontSize: "20px", fontWeight: "bold", color: "#8b5cf6" },
-  connectBtn: { padding: "8px 16px", borderRadius: "8px", background: "#1e293b", color: "#fff", border: "1px solid #334155", cursor: "pointer" },
-  card: { marginTop: '40px', width: 450, padding: 32, borderRadius: 16, background: "#0f172a", textAlign: "center", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" },
-  button: { width: "100%", padding: 14, borderRadius: 10, background: "#22c55e", cursor: "pointer", border: "none", fontWeight: "bold", fontSize: "16px" },
-  regButton: { width: "100%", padding: 12, borderRadius: 8, background: "#3b82f6", color: "#fff", cursor: "pointer", border: "none", fontWeight: "bold", marginBottom: "8px" },
-  input: { width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #334155", background: "#1e293b", color: "#fff", marginBottom: "10px", boxSizing: "border-box" },
-  status: { marginTop: 16, fontSize: 14, color: "#facc15", fontWeight: "500" },
-  statusText: { marginTop: 12, fontSize: 13, color: "#94a3b8" },
-  qualityInfo: { marginTop: 8, fontSize: 12, color: "#22c55e" },
-  successBox: { marginTop: 10, textAlign: "left" },
-  smallText: { fontSize: "10px", color: "#94a3b8", wordBreak: "break-all", marginBottom: "10px" },
-  divider: { height: "1px", background: "#1e293b", margin: "20px 0" },
-  resultBox: { marginTop: "15px", padding: "10px", background: "#064e3b", borderRadius: "8px", border: "1px solid #22c55e", textAlign: 'center', color: '#fff' },
-  
-  // Modal styles
-  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
-  modal: { background: "#0f172a", borderRadius: "16px", padding: "40px", maxWidth: "500px", width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.7)", border: "1px solid #1e293b" },
-  modalIcon: { fontSize: "64px", marginBottom: "20px", textAlign: "center" },
-  modalTitle: { fontSize: "28px", fontWeight: "bold", color: "#22c55e", marginBottom: "15px", textAlign: "center" },
-  modalText: { fontSize: "16px", color: "#94a3b8", marginBottom: "25px", textAlign: "center", lineHeight: "1.6" },
-  txBox: { background: "#1e293b", padding: "15px", borderRadius: "8px", marginBottom: "25px", border: "1px solid #334155" },
-  txLabel: { fontSize: "12px", color: "#64748b", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" },
-  txHash: { fontSize: "14px", color: "#8b5cf6", fontFamily: "monospace", wordBreak: "break-all" },
-  checkmarks: { marginBottom: "25px" },
-  checkItem: { display: "flex", alignItems: "center", padding: "10px 0", fontSize: "14px", color: "#e5e7eb" },
-  checkIcon: { width: "24px", height: "24px", borderRadius: "50%", background: "#22c55e", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", marginRight: "12px", fontSize: "16px", fontWeight: "bold" },
-  modalButton: { width: "100%", padding: "14px", borderRadius: "10px", background: "#8b5cf6", color: "#fff", border: "none", fontWeight: "bold", fontSize: "16px", cursor: "pointer" },
-  infoBox: { display: "flex", alignItems: "flex-start", gap: "12px", padding: "12px", background: "#1e3a8a", borderRadius: "8px", border: "1px solid #3b82f6", textAlign: "left" },
-  infoIcon: { fontSize: "20px", flexShrink: 0 }
+  // Layout
+  page: { minHeight:"100vh", background:"#050810", display:"flex", flexDirection:"column", alignItems:"center", color:"#c8d6e5", fontFamily:"'Courier New', monospace", backgroundImage:"radial-gradient(ellipse at 50% 0%, rgba(0,255,136,0.04) 0%, transparent 60%)" },
+
+  // Nav
+  nav: { width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", padding:"16px 40px", boxSizing:"border-box", borderBottom:"1px solid rgba(0,255,136,0.12)", background:"rgba(5,8,16,0.95)", backdropFilter:"blur(10px)", position:"sticky", top:0, zIndex:99 },
+  logoWrap: { display:"flex", alignItems:"center", gap:10 },
+  shieldIcon: { fontSize:28, color:"#00ff88", lineHeight:1 },
+  logo: { fontSize:18, fontWeight:"bold", letterSpacing:4, color:"#e0e8f0" },
+  logoAccent: { color:"#00ff88" },
+  navRight: { display:"flex", alignItems:"center", gap:12 },
+  networkBadge: { fontSize:10, padding:"4px 8px", borderRadius:4, border:"1px solid rgba(0,255,136,0.3)", color:"#00ff88", letterSpacing:1.5 },
+  connectBtn: { padding:"8px 16px", borderRadius:6, background:"transparent", color:"#c8d6e5", border:"1px solid rgba(200,214,229,0.25)", cursor:"pointer", fontSize:11, letterSpacing:1.5, display:"flex", alignItems:"center", gap:6 },
+  dot: { width:8, height:8, borderRadius:"50%", background:"#00ff88", display:"inline-block" },
+
+  // Step tracker
+  stepBar: { display:"flex", alignItems:"flex-start", marginTop:28, marginBottom:16, gap:0 },
+  stepWrap: { display:"flex", flexDirection:"column", alignItems:"center", gap:6, minWidth:56 },
+  stepActive: { width:28, height:28, borderRadius:"50%", background:"#00ff88", color:"#0a0a0a", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:"bold", boxShadow:"0 0 12px rgba(0,255,136,0.6)", flexShrink:0 },
+  stepDone: { width:28, height:28, borderRadius:"50%", background:"rgba(0,255,136,0.2)", color:"#00ff88", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, border:"1px solid #00ff88", flexShrink:0 },
+  stepInactive: { width:28, height:28, borderRadius:"50%", background:"rgba(255,255,255,0.05)", color:"#4a5568", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, border:"1px solid rgba(255,255,255,0.1)", flexShrink:0 },
+  stepLabel: { fontSize:8, color:"#4a5568", letterSpacing:1.5, textAlign:"center" },
+  stepLabelActive: { fontSize:8, color:"#00ff88", letterSpacing:1.5, textAlign:"center" },
+  connector: { width:36, height:1, background:"rgba(255,255,255,0.08)", margin:"14px 2px 0" },
+  connectorDone: { width:36, height:1, background:"rgba(0,255,136,0.4)", margin:"14px 2px 0" },
+
+  // Card
+  card: { marginTop:40, width:480, padding:"28px 32px", borderRadius:12, background:"#0b0f1a", boxShadow:"0 0 0 1px rgba(0,255,136,0.12), 0 20px 60px rgba(0,0,0,0.7)", marginBottom:40 },
+  cardHeader: { display:"flex", alignItems:"center", gap:14, marginBottom:18 },
+  headerIcon: { fontSize:32, lineHeight:1 },
+  cardTitle: { fontSize:18, fontWeight:"bold", letterSpacing:3, color:"#e0e8f0" },
+  cardSub: { fontSize:11, color:"#4a6080", letterSpacing:1.5, marginTop:3 },
+
+  contractBadge: { display:"flex", alignItems:"center", gap:10, padding:"8px 12px", borderRadius:6, background:"rgba(0,255,136,0.04)", border:"1px solid rgba(0,255,136,0.12)", marginBottom:18 },
+  contractLabel: { fontSize:9, color:"#4a6080", letterSpacing:2 },
+  contractAddr: { fontSize:11, color:"#7a9abf", fontFamily:"monospace", flex:1 },
+  verifiedTag: { fontSize:8, padding:"2px 6px", borderRadius:3, background:"rgba(0,255,136,0.12)", color:"#00ff88", letterSpacing:1.5 },
+
+  divider: { height:1, background:"rgba(255,255,255,0.06)", margin:"16px 0" },
+  section: { marginTop:8 },
+  hint: { fontSize:12, color:"#4a6080", lineHeight:1.7, marginBottom:18, letterSpacing:0.3 },
+
+  // Buttons
+  btnPrimary: { width:"100%", padding:"13px 0", borderRadius:6, background:"linear-gradient(135deg,#0070ff,#0040aa)", color:"#fff", border:"none", cursor:"pointer", fontWeight:"bold", fontSize:13, letterSpacing:2.5, fontFamily:"'Courier New',monospace", boxShadow:"0 4px 20px rgba(0,112,255,0.3)" },
+  btnGreen: { width:"100%", padding:"13px 0", borderRadius:6, background:"linear-gradient(135deg,#00c868,#007a40)", color:"#fff", border:"none", cursor:"pointer", fontWeight:"bold", fontSize:13, letterSpacing:2.5, fontFamily:"'Courier New',monospace", boxShadow:"0 4px 20px rgba(0,200,104,0.3)" },
+  btnBlue: { width:"100%", padding:"13px 0", borderRadius:6, background:"linear-gradient(135deg,#3b82f6,#1d4ed8)", color:"#fff", border:"none", cursor:"pointer", fontWeight:"bold", fontSize:13, letterSpacing:2, fontFamily:"'Courier New',monospace", boxShadow:"0 4px 20px rgba(59,130,246,0.3)" },
+  btnPurple: { width:"100%", padding:"13px 0", borderRadius:6, background:"linear-gradient(135deg,#8b5cf6,#5b21b6)", color:"#fff", border:"none", cursor:"pointer", fontWeight:"bold", fontSize:13, letterSpacing:2, fontFamily:"'Courier New',monospace", boxShadow:"0 4px 20px rgba(139,92,246,0.3)" },
+  btnDisabled: { width:"100%", padding:"13px 0", borderRadius:6, background:"#1e293b", color:"#4a5568", border:"none", cursor:"not-allowed", fontWeight:"bold", fontSize:13, letterSpacing:2, fontFamily:"'Courier New',monospace" },
+
+  // Wallet alert
+  alertBox: { padding:"10px 14px", borderRadius:6, background:"rgba(0,255,136,0.06)", border:"1px solid rgba(0,255,136,0.2)", fontSize:12, marginBottom:16, display:"flex", alignItems:"center", gap:8 },
+  alertIcon: { color:"#00ff88", fontSize:10 },
+  mono: { color:"#00ff88", fontFamily:"'Courier New',monospace", fontSize:11 },
+
+  // Scanner
+  scanLabel: { fontSize:10, letterSpacing:3, color:"#4a6080", marginBottom:10 },
+  progressBar: { height:4, borderRadius:2, background:"rgba(255,255,255,0.08)", marginTop:12 },
+  progressFill: { height:"100%", borderRadius:2, background:"linear-gradient(90deg,#00ff88,#00c8ff)", transition:"width 0.3s ease" },
+  scanStatus: { marginTop:10, fontSize:12, color:"#facc15", letterSpacing:0.5 },
+  frameCount: { marginTop:4, fontSize:11, color:"#4a6080" },
+
+  // Commitment
+  commitBox: { padding:"10px 14px", borderRadius:6, background:"#0a0f1c", border:"1px solid rgba(0,255,136,0.15)", marginBottom:14, display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" },
+  commitLabel: { fontSize:9, color:"#4a6080", letterSpacing:2 },
+  commitVal: { fontSize:11, color:"#7a9abf", fontFamily:"monospace" },
+
+  loadingRow: { fontSize:12, color:"#facc15", letterSpacing:1.5, display:"flex", alignItems:"center", gap:8, margin:"12px 0" },
+  spinner: { display:"inline-block", width:10, height:10, borderRadius:"50%", background:"#facc15" },
+
+  // Info box
+  infoBox: { display:"flex", alignItems:"flex-start", gap:12, padding:"12px 14px", borderRadius:6, border:"1px solid rgba(59,130,246,0.35)", background:"rgba(59,130,246,0.07)", marginBottom:14 },
+  infoIcon: { width:20, height:20, borderRadius:"50%", background:"#3b82f6", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:"bold", flexShrink:0 },
+  infoTitle: { fontSize:11, fontWeight:"bold", letterSpacing:1.5, color:"#c8d6e5", marginBottom:4 },
+  infoText: { fontSize:11, color:"#4a6080" },
+
+  // Terminal box
+  terminalBox: { background:"#060a10", borderRadius:6, padding:"12px 14px", border:"1px solid rgba(255,255,255,0.06)", marginBottom:14 },
+  termLine: { display:"flex", justifyContent:"space-between", padding:"4px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" },
+  termKey: { fontSize:10, color:"#4a6080", letterSpacing:2 },
+  termVal: { fontSize:10, color:"#00ff88", fontFamily:"monospace" },
+
+  statusLine: { fontSize:12, color:"#7a9abf", letterSpacing:0.5, marginBottom:14, padding:"6px 10px", borderLeft:"2px solid rgba(0,255,136,0.4)", background:"rgba(0,255,136,0.02)" },
+  proofBox: { marginTop:12, padding:"8px 12px", background:"rgba(0,255,136,0.08)", borderRadius:6, border:"1px solid rgba(0,255,136,0.25)", textAlign:"center", fontSize:11, color:"#00ff88", letterSpacing:1.5 },
+
+  // Modal
+  modalOverlay: { position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.9)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, backdropFilter:"blur(4px)" },
+  modal: { background:"#0b0f1a", borderRadius:12, padding:"40px 36px", maxWidth:480, width:"90%", boxShadow:"0 0 0 1px rgba(0,255,136,0.2), 0 30px 80px rgba(0,0,0,0.8)", textAlign:"center" },
+  modalShield: { fontSize:64, color:"#00ff88", marginBottom:16, textShadow:"0 0 30px rgba(0,255,136,0.5)" },
+  modalTitle: { fontSize:26, fontWeight:"bold", letterSpacing:4, color:"#00ff88", marginBottom:6 },
+  modalSub: { fontSize:13, color:"#4a6080", marginBottom:24, lineHeight:1.6 },
+  txBox: { background:"#060a10", padding:"14px", borderRadius:8, marginBottom:22, border:"1px solid rgba(255,255,255,0.07)", textAlign:"left" },
+  txLabel: { fontSize:9, color:"#4a6080", marginBottom:8, letterSpacing:2, textTransform:"uppercase" },
+  txHash: { fontSize:12, color:"#8b5cf6", fontFamily:"monospace", wordBreak:"break-all" },
+  checkList: { marginBottom:24 },
+  checkRow: { display:"flex", alignItems:"center", gap:12, padding:"9px 0", fontSize:13, color:"#c8d6e5", borderBottom:"1px solid rgba(255,255,255,0.04)", textAlign:"left" },
+  checkMark: { width:22, height:22, borderRadius:"50%", background:"rgba(0,255,136,0.15)", color:"#00ff88", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:"bold", flexShrink:0, border:"1px solid rgba(0,255,136,0.4)" },
 };

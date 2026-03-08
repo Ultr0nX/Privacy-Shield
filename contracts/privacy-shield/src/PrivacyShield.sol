@@ -14,7 +14,7 @@ contract PrivacyShield {
     // Rule C: Storage for used nullifiers (prevents double-spending)
     mapping(uint256 => bool) public usedNullifiers;
 
-    event IdentityRegistered(uint256 indexed commitment);
+    event IdentityRegistered(address indexed registrant, uint256 indexed commitment);
     event ActionVerified(uint256 indexed nullifier, address indexed user);
 
     constructor(address _verifierAddress) {
@@ -28,7 +28,7 @@ contract PrivacyShield {
     function registerIdentity(uint256 _identityCommitment) external {
         require(!registeredIdentities[_identityCommitment], "Identity already exists");
         registeredIdentities[_identityCommitment] = true;
-        emit IdentityRegistered(_identityCommitment);
+        emit IdentityRegistered(msg.sender, _identityCommitment);
     }
 
     /**
@@ -56,12 +56,20 @@ contract PrivacyShield {
         // 2. Double-Spend Check: Has this specific action been used?
         require(!usedNullifiers[nullifier], "Security: Proof already used");
 
-        // 3. Binding Check: Is this proof meant for THIS wallet?
-        // TEMPORARILY DISABLED FOR TESTING - RE-ENABLE IN PRODUCTION
-        // This prevents "Replay Attacks" where a relayer steals a proof
-        // require(userWallet == uint256(uint160(msg.sender)) || userWallet == uint256(uint160(tx.origin)), "Binding: Wallet mismatch");
+        // 3. BDVP Binding: Proof must be bound to THIS contract address
+        // The app_address is baked inside the ZK circuit inputs — proof generated
+        // for THIS contract cannot be replayed on any other contract
+        require(
+            appAddress == uint256(uint160(address(this))),
+            "BDVP: Wrong designated verifier"
+        );
 
-        // 4. THE MATH CHECK: Call the precompile-linked Verifier
+        // 4. Wallet Binding: Enforced by ZK proof itself
+        // userWallet is a public signal baked into the proof — nobody can generate
+        // a valid proof claiming another wallet without knowing the secret biometric
+        // Note: Cannot use tx.origin here as relayer signs the blockchain tx
+
+        // 5. THE MATH CHECK: Call the precompile-linked Verifier
         // This is where the Elliptic Curve Pairing happens
         require(
             verifier.verifyProof(a, b, c, publicSignals),

@@ -1,4 +1,4 @@
-
+//@info: axum is used for building the http server and handling requests
 use axum::{
     extract::State,
     http::{Method, StatusCode},
@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+//@info: ethers-rs is used for interacting with the ethereum blockchain,sending transactions,and calling contract functions
 use ethers::{
     contract::abigen,
     middleware::SignerMiddleware,
@@ -14,12 +15,16 @@ use ethers::{
     signers::{LocalWallet, Signer},
     types::{Address, U256},
 };
+//@info: serde is used for serializing and deserializing json data in request and response payloads
 use serde::{Deserialize, Serialize};
+//@info: dotenv is used loading environment variables from a .env file for configuration
 use std::{net::SocketAddr, str::FromStr, sync::Arc};
+//@info: tower-http is used for handling cors(cross-origin resource sharing) to allow requests from the fronned ui
 use tower_http::cors::{Any, CorsLayer};
+//@info: tracing is used for logging important events and errors in the  relayer for better visiibility and debugging
 use tracing::{error, info};
 
-// Request payload from the UI (matches data.jsonc format)
+//@info: Request payload from the UI (matches data.jsonc format)
 #[derive(Debug, Deserialize, Serialize)]
 struct ProofRequest {
     proof: Groth16Proof,
@@ -27,14 +32,14 @@ struct ProofRequest {
     public_signals: Vec<String>,
 }
 
-// Registration request payload
+//@info: Registration request payload
 #[derive(Debug, Deserialize, Serialize)]
 struct RegistrationRequest {
     #[serde(rename = "identityCommitment")]
     identity_commitment: String,
 }
 
-// Groth16 proof structure from Circom
+//@info: Groth16 proof structure from Circom
 #[derive(Debug, Deserialize, Serialize)]
 struct Groth16Proof {
     pi_a: Vec<String>,      // ["0x123...", "0x456...", "1"]
@@ -42,7 +47,7 @@ struct Groth16Proof {
     pi_c: Vec<String>,      // ["0x789...", "0x012...", "1"]
 }
 
-// Response payload
+//@info: Response payload to display result of relay or registration attempts back to the UI
 #[derive(Debug, Serialize)]
 struct RelayResponse {
     success: bool,
@@ -53,6 +58,7 @@ struct RelayResponse {
 // Application state
 #[derive(Clone)]
 struct AppState {
+    //@info: ethers client is used for sending transactions and calling contract functions on the blockchain,it is wrapped in an arc for shared ownership across async handlers
     client: Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,
     contract_address: Address,
 }
@@ -71,6 +77,7 @@ abigen!(
     "#,
 );
 
+//@info: what is the use of #[tokio::main] is a macro that sets up the asynchronous runtime for the application,allowing use to write async code in the main function and thoughout the application without needing to manually manage the runtime ...
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
@@ -82,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
     info!("🚀 Starting Privacy Shield Relayer...");
 
     // Get configuration from environment
-    //@audit i think we are using the sepolia tesnet then why here using anvil default values?
+    //@audit i think we are using the sepolia tesnet 
     let rpc_url = std::env::var("RPC_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:8545".to_string());
     let private_key = std::env::var("PRIVATE_KEY")
