@@ -24,10 +24,12 @@ The core innovation of this system is that Alice uses her **Face** to prove she 
 ## 🟢 Step 1: The Face Scan (AI Module)
 Alice opens the website. The AI Module starts her webcam locally.
 
-* **The Action:** The AI (MediaPipe) identifies 468 specific 3D points on her face (eyes, nose, jawline).
-* **The Conversion:** The system calculates the **ratios** between these points. This ensures that even if she moves closer or further from the camera, her unique identity remains consistent.
-* **The Secret:** These ratios are hashed using the **Poseidon Hash** into a single 32-byte number called the `Secret_ID`.
-* **Privacy Check:** The raw video and images are deleted immediately. The `Secret_ID` remains exclusively in Alice’s browser memory.
+* **Step 1a — Liveness Detection:** MediaPipe Face Landmarker runs a 3-second multi-challenge check (blink detection, head micro-motion, expression challenge). This prevents photo/video spoofing attacks. Alice must pass ≥ 2 of 3 checks.
+* **Step 1b — 512-dim Face Embedding:** `face-api.js` detects and aligns Alice's face, then a TF.js **ArcFace** model extracts a 512-dimensional embedding vector — a deep neural network descriptor of her unique facial geometry.
+* **Step 1c — Fuzzy Extractor (Fuzzy Commitment Scheme):**
+    * **Enrollment (first time):** The embedding is quantized to 511 bits → XORed with a BCH(511,259,t=30) codeword encoding a random secret key `K` → produces public `helperData` (safe to store). The `Secret_ID = Poseidon(K)`.
+    * **Verification (returning):** New embedding is quantized → XORed with stored `helperData` → BCH decodes to recover `K` (correcting up to 30 bit-flips from biometric noise) → `Secret_ID = Poseidon(K)`.
+* **Privacy Check:** Raw video is purged instantly. Only the `Secret_ID` and public `helperData` remain. The `helperData` is cryptographically safe — it reveals nothing about Alice's face.
 
 
 
@@ -69,7 +71,7 @@ The Smart Contract receives the data from the Relayer.
 
 | Module | Input | Result |
 | :--- | :--- | :--- |
-| **AI (M1)** | Physical Face | `Secret_ID` (Private) |
+| **AI (M1)** | Physical Face | Liveness ✓ → 512-dim Embedding → Fuzzy Extract → `Secret_ID` (Private) + `helperData` (Public) |
 | **ZK (M2)** | `Secret_ID` + App Address | `ZK Proof` + `Nullifier` |
 | **Relayer (M3)** | `ZK Proof` | Signed Transaction (Gas Paid) |
 | **Blockchain (M4)** | `ZK Proof` | On-chain "Verified" Status |
@@ -104,7 +106,7 @@ The Smart Contract receives the data from the Relayer.
 
 | Member | Task | Action |
 | :--- | :--- | :--- |
-| **M1** | **Face landmarks** | Integrate MediaPipe. Extract 468 landmarks. Write a function to hash these landmarks into a `Secret_ID`. |
+| **M1** | **Biometric Pipeline** | Integrate liveness detection (MediaPipe), 512-dim ArcFace embedding extraction (face-api.js + TF.js), and Fuzzy Commitment Scheme (BCH error correction) to produce a stable `Secret_ID`. |
 | **M2** | **Poseidon Circuit** | Write the real `privacy.circom`. Logic: $Nullifier = Poseidon(Secret, AppAddress)$. Ensure it compiles. |
 | **M3** | **Tx Signer** | Connect the Relayer to a Hardhat wallet. Ensure the Relayer can successfully sign and pay gas for a transaction. |
 | **M4** | **Main Contract** | Write `PrivacyShield.sol`. Implement the `mapping(uint256 => bool)` for nullifiers to prevent double-spending. |

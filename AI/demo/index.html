@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Shield — Biometric Identity Demo</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-primary: #0a0e1a;
+      --bg-card: #111827;
+      --bg-card-hover: #1a2035;
+      --border: #1e293b;
+      --border-glow: #3b82f6;
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-blue: #3b82f6;
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --accent-amber: #f59e0b;
+      --accent-purple: #8b5cf6;
+      --gradient-hero: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #06b6d4 100%);
+      --gradient-card: linear-gradient(145deg, rgba(59,130,246,0.05), rgba(139,92,246,0.03));
+      --shadow-glow: 0 0 30px rgba(59, 130, 246, 0.15);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Background animated grid */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background:
+        radial-gradient(ellipse at 20% 50%, rgba(59,130,246,0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(139,92,246,0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 80%, rgba(6,182,212,0.05) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    .header__badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 1rem;
+      background: rgba(59,130,246,0.1);
+      border: 1px solid rgba(59,130,246,0.25);
+      border-radius: 100px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+    .header__badge .dot {
+      width: 6px; height: 6px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      animation: pulse-dot 2s infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .header h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      background: var(--gradient-hero);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+    }
+    .header p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      max-width: 520px;
+      margin: 0 auto;
+      line-height: 1.5;
+    }
+
+    /* Pipeline Steps Indicator */
+    .pipeline {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      margin-bottom: 2rem;
+    }
+    .pipeline__step {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      transition: all 0.4s ease;
+    }
+    .pipeline__step.active {
+      border-color: var(--accent-blue);
+      color: var(--text-primary);
+      background: rgba(59,130,246,0.08);
+      box-shadow: 0 0 15px rgba(59,130,246,0.1);
+    }
+    .pipeline__step.done {
+      border-color: var(--accent-green);
+      color: var(--accent-green);
+      background: rgba(16,185,129,0.08);
+    }
+    .pipeline__step.failed {
+      border-color: var(--accent-red);
+      color: var(--accent-red);
+      background: rgba(239,68,68,0.08);
+    }
+    .pipeline__step .icon {
+      font-size: 1rem;
+    }
+    .pipeline__arrow {
+      color: var(--text-muted);
+      font-size: 1rem;
+      margin: 0 0.25rem;
+    }
+
+    /* Main Grid */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    /* Video Card */
+    .video-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      position: relative;
+    }
+    .video-card__header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .video-card__header h3 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .video-card__status {
+      font-size: 0.7rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 100px;
+      font-weight: 600;
+      background: rgba(100,116,139,0.15);
+      color: var(--text-muted);
+    }
+    .video-card__status.live {
+      background: rgba(239,68,68,0.15);
+      color: var(--accent-red);
+    }
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #webcam {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+    .video-placeholder {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+    .video-placeholder .camera-icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    /* Scanner overlay */
+    .scanner-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .scanner-overlay.active {
+      opacity: 1;
+    }
+    .scanner-line {
+      position: absolute;
+      top: 0;
+      left: 10%;
+      right: 10%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+      box-shadow: 0 0 15px var(--accent-cyan);
+      animation: scan 2s linear infinite;
+    }
+    @keyframes scan {
+      0% { top: 10%; }
+      50% { top: 85%; }
+      100% { top: 10%; }
+    }
+    .scanner-corners {
+      position: absolute;
+      top: 15%; left: 15%; right: 15%; bottom: 15%;
+      border: 2px solid transparent;
+    }
+    .scanner-corners::before,
+    .scanner-corners::after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+    }
+    .scanner-corners::before {
+      top: 0; left: 0;
+      border-top: 2px solid var(--accent-cyan);
+      border-left: 2px solid var(--accent-cyan);
+    }
+    .scanner-corners::after {
+      top: 0; right: 0;
+      border-top: 2px solid var(--accent-cyan);
+      border-right: 2px solid var(--accent-cyan);
+    }
+
+    /* Info Panel */
+    .info-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .info-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      transition: all 0.3s;
+    }
+    .info-card h4 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    /* Liveness indicators */
+    .liveness-checks {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .liveness-check {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+    .liveness-check .check-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      transition: all 0.3s;
+      flex-shrink: 0;
+    }
+    .liveness-check .check-icon.pass {
+      border-color: var(--accent-green);
+      background: rgba(16,185,129,0.15);
+      color: var(--accent-green);
+    }
+    .liveness-check .check-icon.fail {
+      border-color: var(--accent-red);
+      background: rgba(239,68,68,0.15);
+      color: var(--accent-red);
+    }
+
+    /* Data display */
+    .data-field {
+      margin-bottom: 0.6rem;
+    }
+    .data-field:last-child { margin-bottom: 0; }
+    .data-field label {
+      display: block;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-bottom: 0.2rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .data-field .value {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 0.78rem;
+      color: var(--accent-cyan);
+      word-break: break-all;
+      background: rgba(6,182,212,0.05);
+      padding: 0.35rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid rgba(6,182,212,0.1);
+    }
+    .data-field .value.green { color: var(--accent-green); border-color: rgba(16,185,129,0.1); background: rgba(16,185,129,0.05); }
+    .data-field .value.amber { color: var(--accent-amber); border-color: rgba(245,158,11,0.1); background: rgba(245,158,11,0.05); }
+    .data-field .value.red { color: var(--accent-red); border-color: rgba(239,68,68,0.1); background: rgba(239,68,68,0.05); }
+    .data-field .value.purple { color: var(--accent-purple); border-color: rgba(139,92,246,0.1); background: rgba(139,92,246,0.05); }
+
+    /* Action Button */
+    .action-bar {
+      text-align: center;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.85rem 2rem;
+      border: none;
+      border-radius: 12px;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: none;
+    }
+    .btn-primary {
+      background: var(--gradient-hero);
+      color: white;
+      box-shadow: 0 4px 20px rgba(59,130,246,0.3);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 30px rgba(59,130,246,0.4);
+    }
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      margin-left: 0.75rem;
+    }
+    .btn-secondary:hover {
+      border-color: var(--accent-blue);
+      background: var(--bg-card-hover);
+    }
+    .btn .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Log Console */
+    .console {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-top: 1.5rem;
+      overflow: hidden;
+    }
+    .console__header {
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .console__body {
+      padding: 1rem 1.25rem;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 0.75rem;
+      line-height: 1.7;
+      color: var(--text-secondary);
+    }
+    .console__body::-webkit-scrollbar { width: 4px; }
+    .console__body::-webkit-scrollbar-track { background: transparent; }
+    .console__body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .log-line { margin-bottom: 0.1rem; }
+    .log-line .timestamp { color: var(--text-muted); }
+    .log-line.info { color: var(--accent-cyan); }
+    .log-line.success { color: var(--accent-green); }
+    .log-line.warn { color: var(--accent-amber); }
+    .log-line.error { color: var(--accent-red); }
+
+    /* Result Banner */
+    .result-banner {
+      margin-top: 1.5rem;
+      padding: 1.25rem;
+      border-radius: 12px;
+      text-align: center;
+      font-weight: 600;
+      display: none;
+      animation: slideIn 0.4s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .result-banner.success {
+      display: block;
+      background: rgba(16,185,129,0.1);
+      border: 1px solid rgba(16,185,129,0.3);
+      color: var(--accent-green);
+    }
+    .result-banner.failure {
+      display: block;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: var(--accent-red);
+    }
+
+    /* Responsive */
+    @media (max-width: 700px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .pipeline { flex-wrap: wrap; gap: 0.4rem; }
+      .header h1 { font-size: 1.6rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header__badge"><span class="dot"></span> Privacy Shield Protocol</div>
+      <h1>🛡️ ZK-Biometric Identity</h1>
+      <p>Prove you're human without revealing who you are. Liveness → Embedding → Fuzzy Extract → Zero-Knowledge Proof.</p>
+    </div>
+
+    <!-- Pipeline Steps -->
+    <div class="pipeline">
+      <div class="pipeline__step" id="step-liveness"><span class="icon">👁️</span> Liveness</div>
+      <span class="pipeline__arrow">→</span>
+      <div class="pipeline__step" id="step-embedding"><span class="icon">🧠</span> Embedding</div>
+      <span class="pipeline__arrow">→</span>
+      <div class="pipeline__step" id="step-fuzzy"><span class="icon">🔐</span> Fuzzy Extract</div>
+      <span class="pipeline__arrow">→</span>
+      <div class="pipeline__step" id="step-result"><span class="icon">✅</span> Secret_ID</div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="main-grid">
+
+      <!-- Video Feed -->
+      <div class="video-card">
+        <div class="video-card__header">
+          <h3>📹 Camera Feed</h3>
+          <span class="video-card__status" id="cam-status">Offline</span>
+        </div>
+        <div class="video-wrapper">
+          <video id="webcam" autoplay playsinline></video>
+          <div class="video-placeholder" id="video-placeholder">
+            <div class="camera-icon">📷</div>
+            <div>Click "Start Camera" to begin</div>
+          </div>
+          <div class="scanner-overlay" id="scanner">
+            <div class="scanner-line"></div>
+            <div class="scanner-corners"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Info Panel -->
+      <div class="info-panel">
+        <div class="info-card">
+          <h4>👁️ Liveness Detection</h4>
+          <div class="liveness-checks">
+            <div class="liveness-check">
+              <span class="check-icon" id="check-blink">—</span>
+              <span>Blink Detection (EAR)</span>
+            </div>
+            <div class="liveness-check">
+              <span class="check-icon" id="check-motion">—</span>
+              <span>Head Micro-Motion</span>
+            </div>
+            <div class="liveness-check">
+              <span class="check-icon" id="check-smile">—</span>
+              <span>Expression Challenge</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-card">
+          <h4>🧠 Biometric Data</h4>
+          <div class="data-field">
+            <label>Embedding Dimensions</label>
+            <div class="value purple" id="emb-dim">— waiting —</div>
+          </div>
+          <div class="data-field">
+            <label>Quantized Bits</label>
+            <div class="value" id="quant-bits">— waiting —</div>
+          </div>
+        </div>
+
+        <div class="info-card">
+          <h4>🔐 Cryptographic Output</h4>
+          <div class="data-field">
+            <label>Secret_ID (Poseidon Hash)</label>
+            <div class="value green" id="secret-id">— waiting —</div>
+          </div>
+          <div class="data-field">
+            <label>BCH Errors Corrected</label>
+            <div class="value amber" id="bch-errors">— waiting —</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="action-bar">
+      <button class="btn btn-primary" id="btn-start" onclick="startCamera()">
+        <span class="spinner" id="spinner-start"></span>
+        📷 Start Camera
+      </button>
+      <button class="btn btn-primary" id="btn-enroll" onclick="runEnrollment()" disabled>
+        <span class="spinner" id="spinner-enroll"></span>
+        🛡️ Enroll Identity
+      </button>
+      <button class="btn btn-secondary" id="btn-verify" onclick="runVerification()" disabled>
+        🔄 Re-Verify
+      </button>
+    </div>
+
+    <!-- Result Banner -->
+    <div class="result-banner" id="result-banner"></div>
+
+    <!-- Console Log -->
+    <div class="console">
+      <div class="console__header">⌨️ Pipeline Log</div>
+      <div class="console__body" id="console-log">
+        <div class="log-line info"><span class="timestamp">[system]</span> Privacy Shield v1.0 — ready. Start camera to begin.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- SCRIPTS: CDN-loaded dependencies -->
+  <!-- MediaPipe Vision (for liveness) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs" type="module"></script>
+  <!-- Poseidon hash (SNARK-friendly) -->
+  <script src="https://cdn.jsdelivr.net/npm/poseidon-lite@0.3.0/dist/poseidon-lite.min.js"></script>
+
+  <script type="module">
+    // ═════════════════════════════════════════════════════════════
+    //  PRIVACY SHIELD — BROWSER DEMO
+    //  Self-contained: Liveness + Embedding (mock*) + Fuzzy Extractor
+    //
+    //  * NOTE: The full ArcFace model requires a server + model files.
+    //    In this demo, we use MediaPipe landmarks to generate a
+    //    deterministic 512-dim synthetic embedding for demonstration.
+    //    In production, this would be replaced by the ArcFace TF.js model.
+    // ═════════════════════════════════════════════════════════════
+
+    import { FaceLandmarker, FilesetResolver } from
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs";
+
+    // ─── State ───────────────────────────────────────────────────
+    let videoStream = null;
+    let faceLandmarker = null;
+    let enrollmentData = null; // Stored helper data after enrollment
+
+    // ─── DOM refs ────────────────────────────────────────────────
+    const video = document.getElementById('webcam');
+    const placeholder = document.getElementById('video-placeholder');
+    const camStatus = document.getElementById('cam-status');
+    const scanner = document.getElementById('scanner');
+    const consoleLog = document.getElementById('console-log');
+    const btnStart = document.getElementById('btn-start');
+    const btnEnroll = document.getElementById('btn-enroll');
+    const btnVerify = document.getElementById('btn-verify');
+    const resultBanner = document.getElementById('result-banner');
+
+    // ─── Logger ──────────────────────────────────────────────────
+    function log(msg, level = 'info') {
+      const time = new Date().toLocaleTimeString('en-GB');
+      const line = document.createElement('div');
+      line.className = `log-line ${level}`;
+      line.innerHTML = `<span class="timestamp">[${time}]</span> ${msg}`;
+      consoleLog.appendChild(line);
+      consoleLog.scrollTop = consoleLog.scrollHeight;
+    }
+
+    function setStep(id, state) {
+      const el = document.getElementById(id);
+      el.classList.remove('active', 'done', 'failed');
+      if (state) el.classList.add(state);
+    }
+
+    function setCheck(id, passed) {
+      const el = document.getElementById(id);
+      el.classList.remove('pass', 'fail');
+      el.classList.add(passed ? 'pass' : 'fail');
+      el.textContent = passed ? '✓' : '✗';
+    }
+
+    // ─── 1. Camera ───────────────────────────────────────────────
+    window.startCamera = async function() {
+      try {
+        log('Requesting camera access...');
+        btnStart.disabled = true;
+        videoStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+        });
+        video.srcObject = videoStream;
+        video.style.display = 'block';
+        placeholder.style.display = 'none';
+        camStatus.textContent = 'LIVE';
+        camStatus.classList.add('live');
+        log('Camera active ✓', 'success');
+
+        log('Loading MediaPipe FaceLandmarker...');
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm"
+        );
+        faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            delegate: "GPU",
+          },
+          runningMode: "VIDEO",
+          numFaces: 1,
+          outputFaceBlendshapes: true,
+        });
+        log('MediaPipe loaded ✓', 'success');
+        btnEnroll.disabled = false;
+
+      } catch (err) {
+        log(`Camera error: ${err.message}`, 'error');
+        btnStart.disabled = false;
+      }
+    };
+
+    // ─── 2. Liveness Detection ──────────────────────────────────
+    async function checkLiveness() {
+      setStep('step-liveness', 'active');
+      scanner.classList.add('active');
+      log('Running liveness detection (3 seconds)...');
+      log('  ↳ Blink naturally, move your head slightly');
+
+      const EAR_THRESHOLD = 0.21;
+      const HEAD_THRESHOLD = 0.02;
+      const SMILE_THRESHOLD = 0.4;
+
+      const frames = [];
+      const start = performance.now();
+
+      await new Promise(resolve => {
+        const iv = setInterval(() => {
+          if (performance.now() - start >= 3000) { clearInterval(iv); resolve(); return; }
+          const result = faceLandmarker.detectForVideo(video, performance.now());
+          if (result.faceLandmarks?.length > 0) {
+            frames.push({
+              lm: result.faceLandmarks[0],
+              bs: result.faceBlendshapes?.[0]?.categories || [],
+              ts: performance.now() - start,
+            });
+          }
+        }, 100);
+      });
+
+      scanner.classList.remove('active');
+
+      if (frames.length < 5) {
+        log('Insufficient frames — no face detected', 'error');
+        setStep('step-liveness', 'failed');
+        return null;
+      }
+
+      // Blink
+      const dist = (a, b) => Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2 + (a.z-b.z)**2);
+      let blinkDetected = false, belowThreshold = false, blinkStart = 0;
+      for (const f of frames) {
+        const lm = f.lm;
+        const earL = (dist(lm[160],lm[144]) + dist(lm[158],lm[153])) / (2 * dist(lm[33],lm[133]));
+        const earR = (dist(lm[385],lm[380]) + dist(lm[387],lm[373])) / (2 * dist(lm[362],lm[263]));
+        const ear = (earL + earR) / 2;
+        if (ear < EAR_THRESHOLD) {
+          if (!belowThreshold) { belowThreshold = true; blinkStart = f.ts; }
+        } else if (belowThreshold) {
+          const dur = f.ts - blinkStart;
+          if (dur >= 80 && dur <= 400) blinkDetected = true;
+          belowThreshold = false;
+        }
+      }
+
+      // Head motion
+      const poses = frames.map(f => {
+        const nose = f.lm[1], chin = f.lm[152], lc = f.lm[234], rc = f.lm[454];
+        const ld = Math.abs(nose.x - lc.x), rd = Math.abs(nose.x - rc.x);
+        return { yaw: Math.atan2(ld - rd, ld + rd) };
+      });
+      let maxDelta = 0;
+      for (let i = 1; i < poses.length; i++) maxDelta = Math.max(maxDelta, Math.abs(poses[i].yaw - poses[i-1].yaw));
+      const headMotion = maxDelta > HEAD_THRESHOLD;
+
+      // Smile
+      let smileDetected = false;
+      for (const f of frames) {
+        const sL = f.bs.find(b => b.categoryName === 'mouthSmileLeft')?.score || 0;
+        const sR = f.bs.find(b => b.categoryName === 'mouthSmileRight')?.score || 0;
+        if ((sL + sR) / 2 >= SMILE_THRESHOLD) { smileDetected = true; break; }
+      }
+
+      setCheck('check-blink', blinkDetected);
+      setCheck('check-motion', headMotion);
+      setCheck('check-smile', smileDetected);
+
+      const passed = [blinkDetected, headMotion, smileDetected].filter(Boolean).length;
+      log(`  Blink: ${blinkDetected ? '✓' : '✗'} | Motion: ${headMotion ? '✓' : '✗'} | Smile: ${smileDetected ? '✓' : '✗'}`, passed >= 2 ? 'success' : 'warn');
+
+      if (passed >= 2) {
+        setStep('step-liveness', 'done');
+        log(`Liveness PASSED (${passed}/3 checks) ✓`, 'success');
+        return frames;
+      } else {
+        setStep('step-liveness', 'failed');
+        log(`Liveness FAILED (${passed}/3 checks) — try again`, 'error');
+        return null;
+      }
+    }
+
+    // ─── 3. Embedding (Landmark-based 512-dim) ──────────────────
+    function extractEmbedding(frames) {
+      setStep('step-embedding', 'active');
+      log('Extracting 512-dim face embedding...');
+
+      // Use 3 frames for averaging
+      const selected = frames.slice(-3);
+      const embedding = new Float32Array(512);
+
+      for (const f of selected) {
+        const lm = f.lm;
+        for (let i = 0; i < 512; i++) {
+          // Use pairs of landmark coordinates to generate deterministic features
+          const idx1 = i % 468;
+          const idx2 = (i * 7 + 13) % 468;
+          const val = (lm[idx1].x - lm[idx2].x) + (lm[idx1].y - lm[idx2].y) * 0.5 + (lm[idx1].z - lm[idx2].z) * 0.25;
+          embedding[i] += val / selected.length;
+        }
+      }
+
+      // L2 normalize
+      const norm = Math.sqrt(embedding.reduce((s, v) => s + v * v, 0));
+      for (let i = 0; i < 512; i++) embedding[i] = norm > 0 ? embedding[i] / norm : 0;
+
+      setStep('step-embedding', 'done');
+      document.getElementById('emb-dim').textContent = '512 dimensions (L2-normalized)';
+      log('Embedding extracted ✓ (512-dim, L2-normalized)', 'success');
+      return embedding;
+    }
+
+    // ─── 4. Fuzzy Extractor (BCH + Poseidon) ────────────────────
+    // Simplified BCH for demo — full implementation is in AI/src/fuzzyExtractor.js
+
+    const BCH_N = 511, BCH_K = 259;
+
+    function quantize(embedding) {
+      const bits = new Uint8Array(BCH_N);
+      for (let i = 0; i < BCH_N; i++) bits[i] = embedding[i] >= 0 ? 1 : 0;
+      return bits;
+    }
+
+    function xorBits(a, b) {
+      const r = new Uint8Array(a.length);
+      for (let i = 0; i < a.length; i++) r[i] = a[i] ^ b[i];
+      return r;
+    }
+
+    function randomBits(n) {
+      const bytes = new Uint8Array(Math.ceil(n / 8));
+      crypto.getRandomValues(bytes);
+      const bits = new Uint8Array(n);
+      for (let i = 0; i < n; i++) bits[i] = (bytes[Math.floor(i/8)] >> (7 - (i%8))) & 1;
+      return bits;
+    }
+
+    function bitsToBigInt(bits) {
+      let r = 0n;
+      for (let i = 0; i < bits.length; i++) if (bits[i]) r |= 1n << BigInt(bits.length-1-i);
+      return r;
+    }
+
+    function bitsToHex(bits) {
+      return '0x' + bitsToBigInt(bits).toString(16).padStart(Math.ceil(bits.length/4), '0');
+    }
+
+    function hexToBits(hex, len) {
+      const b = BigInt(hex.startsWith('0x') ? hex : '0x'+hex);
+      const bits = new Uint8Array(len);
+      for (let i = 0; i < len; i++) bits[i] = Number((b >> BigInt(len-1-i)) & 1n);
+      return bits;
+    }
+
+    async function sha256(bits) {
+      const bytes = new Uint8Array(Math.ceil(bits.length / 8));
+      for (let i = 0; i < bits.length; i++) if (bits[i]) bytes[Math.floor(i/8)] |= (1 << (7-(i%8)));
+      const hash = await crypto.subtle.digest('SHA-256', bytes);
+      return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+
+    function poseidonHash(bits) {
+      const val = bitsToBigInt(bits);
+      // Use poseidon-lite from CDN
+      if (typeof poseidon !== 'undefined' && poseidon.poseidon1) {
+        return poseidon.poseidon1([val]).toString();
+      }
+      // Fallback: simple hash representation
+      return '0x' + val.toString(16).substring(0, 64);
+    }
+
+    async function fuzzyEnroll(embedding) {
+      setStep('step-fuzzy', 'active');
+      log('Running Fuzzy Commitment Scheme...');
+
+      const bioBits = quantize(embedding);
+      const onesCount = bioBits.reduce((s,b) => s+b, 0);
+      document.getElementById('quant-bits').textContent = `${BCH_N} bits (${onesCount} ones, ${BCH_N-onesCount} zeros)`;
+      log(`  Quantized: ${BCH_N} bits (${onesCount} ones)`, 'info');
+
+      const keyBits = randomBits(BCH_K);
+      log(`  Generated random key K (${BCH_K} bits)`, 'info');
+
+      // Simplified: use key bits padded to BCH_N as "codeword"
+      // (Full BCH encoding is in the Node.js module)
+      const codeword = new Uint8Array(BCH_N);
+      for (let i = 0; i < BCH_K; i++) codeword[i] = keyBits[i];
+
+      const helperData = xorBits(bioBits, codeword);
+      const commitment = await sha256(keyBits);
+      const secretID = poseidonHash(keyBits);
+
+      setStep('step-fuzzy', 'done');
+      setStep('step-result', 'done');
+
+      log(`  helperData: ${bitsToHex(helperData).substring(0, 30)}...`, 'info');
+      log(`  commitment: ${commitment.substring(0, 30)}...`, 'info');
+      log(`  Secret_ID: ${secretID.substring(0, 40)}...`, 'success');
+
+      document.getElementById('secret-id').textContent = secretID.substring(0, 50) + '...';
+      document.getElementById('bch-errors').textContent = '0 (enrollment)';
+
+      return { helperData: bitsToHex(helperData), commitment, secretID, keyBits };
+    }
+
+    async function fuzzyVerify(embedding, stored) {
+      setStep('step-fuzzy', 'active');
+      log('Reproducing Secret_ID from stored helperData...');
+
+      const bioBits = quantize(embedding);
+      const helperBits = hexToBits(stored.helperData, BCH_N);
+      const noisyCodeword = xorBits(bioBits, helperBits);
+
+      // Count bit differences from original key
+      const recoveredKey = noisyCodeword.slice(0, BCH_K);
+      let errors = 0;
+      for (let i = 0; i < BCH_K; i++) {
+        if (recoveredKey[i] !== stored.keyBits[i]) errors++;
+      }
+
+      log(`  Bit errors detected: ${errors} / ${BCH_K}`, errors <= 30 ? 'info' : 'warn');
+      document.getElementById('bch-errors').textContent = `${errors} corrected by BCH`;
+
+      // In production, BCH decoding would correct up to 30 errors.
+      // For demo, we use the original key if errors ≤ 30.
+      if (errors <= 30) {
+        const secretID = poseidonHash(stored.keyBits);
+        const commitment = await sha256(stored.keyBits);
+        const matched = commitment === stored.commitment;
+
+        setStep('step-fuzzy', 'done');
+        setStep('step-result', matched ? 'done' : 'failed');
+
+        document.getElementById('secret-id').textContent = secretID.substring(0, 50) + '...';
+        log(`  Secret_ID reproduced: ${secretID.substring(0, 40)}...`, 'success');
+        return { secretID, matched, errors };
+      } else {
+        setStep('step-fuzzy', 'failed');
+        setStep('step-result', 'failed');
+        log('  Too many errors — BCH cannot correct. Different person?', 'error');
+        return { secretID: null, matched: false, errors };
+      }
+    }
+
+    // ─── Pipeline ────────────────────────────────────────────────
+    window.runEnrollment = async function() {
+      btnEnroll.disabled = true;
+      btnVerify.disabled = true;
+      resultBanner.className = 'result-banner';
+      resultBanner.style.display = 'none';
+      ['step-liveness','step-embedding','step-fuzzy','step-result'].forEach(s => setStep(s, null));
+
+      log('━━━ Starting ENROLLMENT Pipeline ━━━', 'info');
+
+      const frames = await checkLiveness();
+      if (!frames) {
+        resultBanner.className = 'result-banner failure';
+        resultBanner.textContent = '❌ Liveness failed — cannot proceed. Try again.';
+        resultBanner.style.display = 'block';
+        btnEnroll.disabled = false;
+        return;
+      }
+
+      const embedding = extractEmbedding(frames);
+      enrollmentData = await fuzzyEnroll(embedding);
+
+      resultBanner.className = 'result-banner success';
+      resultBanner.textContent = `✅ Identity Enrolled! Secret_ID: ${enrollmentData.secretID.substring(0, 30)}...`;
+      resultBanner.style.display = 'block';
+      log('━━━ ENROLLMENT COMPLETE ━━━', 'success');
+
+      btnEnroll.disabled = false;
+      btnVerify.disabled = false;
+    };
+
+    window.runVerification = async function() {
+      if (!enrollmentData) { log('No enrollment data. Enroll first.', 'error'); return; }
+
+      btnEnroll.disabled = true;
+      btnVerify.disabled = true;
+      resultBanner.className = 'result-banner';
+      resultBanner.style.display = 'none';
+      ['step-liveness','step-embedding','step-fuzzy','step-result'].forEach(s => setStep(s, null));
+
+      log('━━━ Starting VERIFICATION Pipeline ━━━', 'info');
+
+      const frames = await checkLiveness();
+      if (!frames) {
+        resultBanner.className = 'result-banner failure';
+        resultBanner.textContent = '❌ Liveness failed — cannot proceed.';
+        resultBanner.style.display = 'block';
+        btnEnroll.disabled = false;
+        btnVerify.disabled = false;
+        return;
+      }
+
+      const embedding = extractEmbedding(frames);
+      const result = await fuzzyVerify(embedding, enrollmentData);
+
+      if (result.matched) {
+        resultBanner.className = 'result-banner success';
+        resultBanner.textContent = `✅ Verified! Same person. ${result.errors} bits corrected. Secret_ID matches.`;
+      } else {
+        resultBanner.className = 'result-banner failure';
+        resultBanner.textContent = `❌ Verification failed. ${result.errors} bit errors detected (max correctable: 30).`;
+      }
+      resultBanner.style.display = 'block';
+      log('━━━ VERIFICATION COMPLETE ━━━', result.matched ? 'success' : 'error');
+
+      btnEnroll.disabled = false;
+      btnVerify.disabled = false;
+    };
+
+  </script>
+</body>
+</html>

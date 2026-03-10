@@ -27,9 +27,9 @@ Privacy Shield uses **Designated Verifier Proofs (DVP)**. Instead of one ID for 
 The architecture is split into four distinct modules to ensure security and decentralization:
 
 1.  **Module A: Identity Engine (Edge-AI)**
-    * **What:** Converts physical face data into a digital secret.
-    * **Tech:** MediaPipe + TensorFlow.js.
-    * **Privacy:** Raw video is purged instantly. Only a 32-byte `Secret_ID` remains on the user's device.
+    * **What:** Converts a physical face into a stable cryptographic secret via liveness detection, 512-dim ArcFace embeddings, and a Fuzzy Commitment Scheme.
+    * **Tech:** MediaPipe (liveness) + face-api.js (detection) + TF.js ArcFace (512-dim embedding) + BCH Error Correction (fuzzy extractor) + Poseidon Hash.
+    * **Privacy:** Raw video is purged instantly. Only public `helperData` (cryptographically safe) and a Poseidon-hashed `Secret_ID` remain on the user's device.
 
 2.  **Module B: ZK Engine (The Prover)**
     * **What:** Generates a Zero-Knowledge Proof (ZKP) that says: *"I know a Secret_ID that corresponds to this App, but I won't show you the secret."*
@@ -51,7 +51,8 @@ The architecture is split into four distinct modules to ensure security and dece
 | :--- | :--- | :--- |
 | **ZK Logic** | **Circom 2.1** | The industry standard for writing R1CS constraints. It’s highly optimized for EVM. |
 | **Hashing** | **Poseidon Hash** | Unlike SHA-256, Poseidon is "SNARK-friendly." It reduces proof generation time by 90% in a browser. |
-| **AI Vision** | **MediaPipe** | Runs entirely in the browser. We don't need to send your face to a server, ensuring 100% privacy. |
+| **AI Vision** | **MediaPipe + face-api.js + ArcFace (TF.js)** | MediaPipe handles liveness detection in-browser. face-api.js detects+aligns faces. ArcFace produces 512-dim embeddings for robust identity. |
+| **Fuzzy Extractor** | **BCH(511,259,t=30) + SHA-256** | Fuzzy Commitment Scheme converts noisy biometric embeddings into stable cryptographic keys, tolerating up to ~6% bit error rate. |
 | **Proof System** | **Groth16** | Offers the smallest proof size (only ~200 bytes) and the cheapest on-chain verification gas costs. |
 | **Blockchain** | **Polygon Amoy** | Fast finality and near-zero fees, making identity verification accessible. |
 
@@ -61,7 +62,7 @@ The architecture is split into four distinct modules to ensure security and dece
 
 1.  **Plausible Deniability:** Our ZK circuit includes a "trapdoor" property. If a user is coerced into showing their ID, they can mathematically argue that the Verifier could have forged the proof.
 2.  **Wallet Binding:** Proofs are tied to a specific `userWallet`. If a hacker intercepts your proof, they cannot "replay" it for their own account.
-3.  **Zero Raw Data:** We do not store biometric templates. We store **hashes of ratios** between landmarks, making it impossible to reconstruct your face even if the database is leaked.
+3.  **Zero Raw Data:** We do not store biometric templates. We store only public `helperData` (XOR of quantized embedding bits with an ECC codeword) and a Poseidon hash commitment. It is mathematically impossible to reconstruct a face from this data, even if the database is leaked.
 
 ---
 
@@ -99,7 +100,7 @@ The architecture is split into four distinct modules to ensure security and dece
 
 ## 🗺️ 6. Roadmap
 * **Phase 1:** Infrastructure Skeleton (Mock Data). ✅
-* **Phase 2:** Biometric Landmarks & ZK Circuit Logic. ⏳
+* **Phase 2:** Biometric Pipeline (Liveness + 512-dim Embeddings + Fuzzy Extractor) & ZK Circuit Logic. ⏳
 * **Phase 3:** On-chain Verifier Handshake. ⏳
 * **Phase 4:** Polygon Amoy Testnet Deployment. ⏳
 
