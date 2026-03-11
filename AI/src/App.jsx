@@ -9,25 +9,39 @@ export default function App() {
     consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [state.logs]);
 
-  const stepState = (stepPhases, phase) => {
+  const stepState = (stepId, phase) => {
     const donePhases = {
       liveness: ['embedding', 'fuzzy', 'done'],
       embedding: ['fuzzy', 'done'],
       fuzzy: ['done'],
       result: [],
     };
-    if (phase === 'done' && stepPhases === 'result') return 'done';
-    if (donePhases[stepPhases]?.includes(phase)) return 'done';
-    if (phase === stepPhases) return 'active';
+    if (phase === 'done' && stepId === 'result') return 'done';
+    if (donePhases[stepId]?.includes(phase)) return 'done';
+    if (phase === stepId) return 'active';
     if (phase === 'error') return '';
+    return '';
+  };
+
+  const connectorState = (beforeStep, phase) => {
+    const st = stepState(beforeStep, phase);
+    if (st === 'done') return 'done';
+    if (st === 'active') return 'active';
     return '';
   };
 
   const phase = state.phase;
   const isRunning = ['liveness', 'embedding', 'fuzzy'].includes(phase);
 
+  const steps = [
+    { id: 'liveness', icon: '👁️', label: 'Liveness' },
+    { id: 'embedding', icon: '🧠', label: 'Embedding' },
+    { id: 'fuzzy', icon: '🔐', label: 'Fuzzy Extract' },
+    { id: 'result', icon: '✅', label: 'Secret_ID' },
+  ];
+
   return (
-    <div className="app-container">
+    <div className={`app-container phase-${phase}`}>
       {/* Header */}
       <header className="header">
         <div className="header__badge">
@@ -43,14 +57,11 @@ export default function App() {
 
       {/* Pipeline Steps */}
       <div className="pipeline">
-        {[
-          { id: 'liveness', icon: '👁️', label: 'Liveness' },
-          { id: 'embedding', icon: '🧠', label: 'Embedding' },
-          { id: 'fuzzy', icon: '🔐', label: 'Fuzzy Extract' },
-          { id: 'result', icon: '✅', label: 'Secret_ID' },
-        ].map((step, i) => (
+        {steps.map((step, i) => (
           <span key={step.id} style={{ display: 'contents' }}>
-            {i > 0 && <span className="pipeline__arrow">→</span>}
+            {i > 0 && (
+              <div className={`pipeline__connector ${connectorState(steps[i - 1].id, phase)}`} />
+            )}
             <div className={`pipeline__step ${stepState(step.id, phase)}`}>
               <span className="step-icon">{step.icon}</span>
               {step.label}
@@ -62,11 +73,14 @@ export default function App() {
       {/* Main Grid */}
       <div className="main-grid">
         {/* Camera Card */}
-        <div className="card">
+        <div className={`card camera-card ${state.scanning ? 'scanning' : ''}`}>
           <div className="card__header">
-            <h3>📹 Camera Feed</h3>
+            <h3>
+              <span className="card__section-icon blue">📹</span>
+              Camera Feed
+            </h3>
             <span className={`cam-badge ${state.cameraReady ? 'live' : 'offline'}`}>
-              {state.cameraReady ? 'LIVE' : 'Offline'}
+              {state.cameraReady ? '● LIVE' : 'Offline'}
             </span>
           </div>
           <div className="video-wrapper">
@@ -74,9 +88,15 @@ export default function App() {
             {!state.cameraReady && (
               <div className="video-placeholder">
                 <div className="cam-icon">📷</div>
-                <div>Click "Start Camera" to begin</div>
+                <p>Click "Start Camera" to begin</p>
               </div>
             )}
+            {/* Corner brackets */}
+            <div className="corner-bracket tl" />
+            <div className="corner-bracket tr" />
+            <div className="corner-bracket bl" />
+            <div className="corner-bracket br" />
+            {/* Scanner */}
             <div className={`scanner-overlay ${state.scanning ? 'active' : ''}`}>
               <div className="scanner-line" />
             </div>
@@ -84,11 +104,14 @@ export default function App() {
         </div>
 
         {/* Info Panels */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div className="info-column">
           {/* Liveness Card */}
           <div className="card">
             <div className="card__body">
-              <div className="data-field__label" style={{ marginBottom: '0.6rem' }}>👁️ Liveness Detection</div>
+              <div className="section-title">
+                <span className="section-emoji">👁️</span>
+                Liveness Detection
+              </div>
               <div className="liveness-list">
                 {[
                   { id: 'blink', label: 'Blink Detection (EAR)', val: state.liveness.blink },
@@ -109,10 +132,13 @@ export default function App() {
           {/* Biometric Data Card */}
           <div className="card">
             <div className="card__body">
-              <div className="data-field__label" style={{ marginBottom: '0.6rem' }}>🧠 Biometric Data</div>
+              <div className="section-title">
+                <span className="section-emoji">🧠</span>
+                Biometric Data
+              </div>
               <div className="data-field">
                 <span className="data-field__label">Embedding Dimensions</span>
-                <div className="data-field__value purple">
+                <div className={`data-field__value purple ${!state.embedding.dim ? 'waiting' : ''}`}>
                   {state.embedding.dim ? `${state.embedding.dim} dimensions (L2-normalized)` : '— waiting —'}
                 </div>
               </div>
@@ -122,16 +148,19 @@ export default function App() {
           {/* Crypto Output Card */}
           <div className="card">
             <div className="card__body">
-              <div className="data-field__label" style={{ marginBottom: '0.6rem' }}>🔐 Cryptographic Output</div>
+              <div className="section-title">
+                <span className="section-emoji">🔐</span>
+                Cryptographic Output
+              </div>
               <div className="data-field">
                 <span className="data-field__label">Secret_ID (Poseidon Hash)</span>
-                <div className="data-field__value green">
+                <div className={`data-field__value green ${!state.crypto.secretID ? 'waiting' : ''}`}>
                   {state.crypto.secretID ? `${state.crypto.secretID.substring(0, 50)}...` : '— waiting —'}
                 </div>
               </div>
               <div className="data-field">
                 <span className="data-field__label">BCH Errors Corrected</span>
-                <div className="data-field__value amber">
+                <div className={`data-field__value amber ${state.crypto.bchErrors === null ? 'waiting' : ''}`}>
                   {state.crypto.bchErrors !== null ? `${state.crypto.bchErrors} corrected by BCH` : '— waiting —'}
                 </div>
               </div>
@@ -166,7 +195,7 @@ export default function App() {
 
       {!state.cameraReady && (
         <div className="info-hint">
-          Camera access is required for biometric scanning. All data stays in your browser.
+          🔒 Camera access is required for biometric scanning. All data stays in your browser — nothing is ever uploaded.
         </div>
       )}
 
@@ -178,9 +207,12 @@ export default function App() {
       )}
 
       {/* Console Log */}
-      <div className="console-panel card" style={{ marginTop: '1.25rem' }}>
+      <div className="console-panel card" style={{ marginTop: '1.5rem' }}>
         <div className="card__header">
-          <h3>⌨️ Pipeline Log</h3>
+          <h3>
+            <span className="card__section-icon cyan">⌨️</span>
+            Pipeline Log
+          </h3>
         </div>
         <div className="card__body">
           {state.logs.map((log, i) => (
