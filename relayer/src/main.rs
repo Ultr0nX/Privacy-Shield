@@ -37,6 +37,14 @@ struct ProofRequest {
 struct RegistrationRequest {
     #[serde(rename = "identityCommitment")]
     identity_commitment: String,
+    /// 96-byte packed helper data: 64 B XOR bits + 32 B SHA-256(randomSecret).
+    /// Required for /register, absent for /check-registration.
+    #[serde(rename = "helperData", default)]
+    helper_data: Option<String>,
+    /// The user's Ethereum address (checksummed or lowercase).
+    /// Required for /register, absent for /check-registration.
+    #[serde(rename = "userWallet", default)]
+    user_wallet: Option<String>,
 }
 
 //@info: Groth16 proof structure from Circom
@@ -69,9 +77,9 @@ abigen!(
     PrivacyShield,
     r#"[
         function verifyAndExecute(uint256[2] calldata a, uint256[2][2] calldata b, uint256[2] calldata c, uint256[4] calldata publicSignals) external
-        function registerIdentity(uint256 _identityCommitment) external
+        function registerIdentity(address userWallet, uint256 commitment, bytes helperData) external
         function isRegistered(uint256 _identityCommitment) external view returns (bool)
-        event IdentityRegistered(uint256 indexed commitment)
+        event IdentityRegistered(address indexed registrant, uint256 indexed commitment)
         event ActionVerified(uint256 indexed nullifier, address indexed user)
     ]
     "#,
@@ -93,7 +101,12 @@ async fn main() -> anyhow::Result<()> {
     let rpc_url = std::env::var("RPC_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:8545".to_string());
     let private_key = std::env::var("PRIVATE_KEY")
-        .unwrap_or_else(|_| "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()); // Default Anvil key
+        .unwrap_or_else(|_| "0xYOUR_SEPOLIA_PRIVATE_KEY".to_string());
+    if private_key == "0xYOUR_SEPOLIA_PRIVATE_KEY" {
+        return Err(anyhow::anyhow!(
+            "PRIVATE_KEY is not configured. Set a funded Sepolia wallet key in relayer/.env"
+        ));
+    }
     let contract_address_str = std::env::var("CONTRACT_ADDRESS")
         .unwrap_or_else(|_| "0x5FbDB2315678afecb367f032d93F642f64180aa3".to_string()); // Default first deployment
 
@@ -103,17 +116,31 @@ async fn main() -> anyhow::Result<()> {
 
     // Setup wallet
     let wallet = private_key.parse::<LocalWallet>()?;
-    
-    // Try to get chain_id, but use a default if blockchain is not available
+
+    // Resolve chain_id safely.
+    // Priority:
+    // 1) RPC-reported chain id (authoritative)
+    // 2) CHAIN_ID env var fallback (only when RPC query fails)
+    let configured_chain_id = std::env::var("CHAIN_ID")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok());
+
     let chain_id = match provider.get_chainid().await {
         Ok(id) => {
             info!("✅ Connected to blockchain - Chain ID: {}", id);
             id.as_u64()
         }
         Err(e) => {
-            info!("⚠️  Blockchain not available yet: {}", e);
-            info!("⚠️  Using default chain ID 31337 (local). Relayer will still accept requests.");
-            31337u64 // Default for local development (Anvil/Hardhat)
+            if let Some(id) = configured_chain_id {
+                info!("⚠️  Could not query chain id from RPC: {}", e);
+                info!("⚠️  Falling back to CHAIN_ID from env: {}", id);
+                id
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Failed to read chain id from RPC ({}) and CHAIN_ID is not set. Set CHAIN_ID in relayer/.env (e.g., 11155111 for Sepolia).",
+                    e
+                ));
+            }
         }
     };
     
@@ -173,7 +200,17 @@ async fn relay_proof(
     State(state): State<AppState>,
     Json(payload): Json<ProofRequest>,
 ) -> impl IntoResponse {
-    info!("📨 Received proof request: {:?}", payload);
+    info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    info!("🔐 RELAY (VERIFY) REQUEST received");
+    info!("   public signals count: {}", payload.public_signals.len());
+    if payload.public_signals.len() >= 4 {
+        info!("   [0] identityCommitment: {}...", &payload.public_signals[0].chars().take(18).collect::<String>());
+        info!("   [1] app_address:        {}", payload.public_signals[1]);
+        info!("   [2] user_wallet:        {}", payload.public_signals[2]);
+        info!("   [3] nullifier:          {}...", &payload.public_signals[3].chars().take(18).collect::<String>());
+    }
+    info!("   pi_a[0] prefix: {}...", payload.proof.pi_a.first().map(|s| &s[..s.len().min(16)]).unwrap_or("?"));
+    info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     // For Phase 1: We're working with mock data
     // In Phase 2+, this will handle real ZK proofs
@@ -209,7 +246,14 @@ async fn register_identity(
     State(state): State<AppState>,
     Json(payload): Json<RegistrationRequest>,
 ) -> impl IntoResponse {
-    info!("📝 Received registration request for commitment: {}", payload.identity_commitment);
+    info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    info!("📝 REGISTER REQUEST received");
+    info!("   userWallet:    {}", payload.user_wallet.as_deref().unwrap_or("<missing>"));
+    info!("   commitment:    {}", payload.identity_commitment);
+    info!("   helperData:    {} chars, prefix: {}...",
+        payload.helper_data.as_deref().map(|s| s.len()).unwrap_or(0),
+        payload.helper_data.as_deref().unwrap_or("").chars().take(18).collect::<String>());
+    info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     match submit_registration(state, payload).await {
         Ok(tx_hash) => {
@@ -242,10 +286,14 @@ async fn check_registration(
     State(state): State<AppState>,
     Json(payload): Json<RegistrationRequest>,
 ) -> impl IntoResponse {
-    info!("🔍 Checking registration status for: {}", payload.identity_commitment);
+    info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    info!("🔍 CHECK-REGISTRATION REQUEST received");
+    info!("   commitment: {}...", &payload.identity_commitment.chars().take(20).collect::<String>());
+    info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     match check_registration_status(state, payload).await {
         Ok(is_registered) => {
+            info!("   result: registered={}", is_registered);
             (
                 StatusCode::OK,
                 Json(serde_json::json!({
@@ -256,14 +304,30 @@ async fn check_registration(
             )
         }
         Err(e) => {
-            error!(" Failed to check registration: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "success": false,
-                    "error": format!("{}", e)
-                })),
-            )
+            error!("Failed to check registration: {:?}", e);
+            let error_message = format!("{}", e).to_lowercase();
+            let rpc_unavailable = error_message.contains("connection refused")
+                || error_message.contains("tcp connect error")
+                || error_message.contains("error sending request");
+
+            if rpc_unavailable {
+                (
+                    StatusCode::OK,
+                    Json(serde_json::json!({
+                        "success": true,
+                        "registered": false,
+                        "message": "Blockchain RPC unavailable; treating identity as not registered"
+                    })),
+                )
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "success": false,
+                        "error": format!("{}", e)
+                    })),
+                )
+            }
         }
     }
 }
@@ -278,23 +342,62 @@ async fn submit_registration(
     let commitment = parse_hex_to_u256(&registration.identity_commitment)?;
     info!("📝 Identity commitment: {}", commitment);
 
-    // Create contract instance
-    let contract = PrivacyShield::new(state.contract_address, state.client.clone());
+    // Parse user wallet address
+    let user_wallet_str = registration.user_wallet
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("userWallet is required for registration"))?;
+    let user_wallet = Address::from_str(user_wallet_str)
+        .map_err(|e| anyhow::anyhow!("Invalid user wallet address '{}': {}", user_wallet_str, e))?;
+    info!("👤 User wallet: {:?}", user_wallet);
 
-    info!("📝 Calling registerIdentity function on contract...");
-    
-    let tx_call = contract.register_identity(commitment);
+    // Decode helperData from hex string → raw bytes
+    let helper_data_str = registration.helper_data
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("helperData is required for registration"))?;
+    let helper_hex = helper_data_str.trim_start_matches("0x");
+    let helper_bytes = decode_hex(helper_hex)
+        .map_err(|e| anyhow::anyhow!("Invalid helperData hex: {}", e))?;
+    if helper_bytes.len() != 96 {
+        return Err(anyhow::anyhow!(
+            "helperData must be 96 bytes, got {}",
+            helper_bytes.len()
+        ));
+    }
+    let helper_data = ethers::types::Bytes::from(helper_bytes);
+    info!("📦 helperData: {} bytes", helper_data.len());
+
+    // Create contract instance and call registerIdentity(userWallet, commitment, helperData)
+    let contract = PrivacyShield::new(state.contract_address, state.client.clone());
+    info!("📝 Calling registerIdentity on contract...");
+
+    let tx_call   = contract.register_identity(user_wallet, commitment, helper_data);
     let pending_tx = tx_call.send().await?;
-    
+
     info!("⏳ Transaction sent, waiting for confirmation...");
-    
     let receipt = pending_tx.await?.ok_or_else(|| anyhow::anyhow!("Transaction dropped from mempool"))?;
-    
+
     let tx_hash = format!("0x{:x}", receipt.transaction_hash);
-    info!("✅ Registration confirmed: {}", tx_hash);
-    info!("📊 Gas used: {}", receipt.gas_used.unwrap_or_default());
-    
+    info!("✅ Registration confirmed on-chain!");
+    info!("   tx_hash:  {}", tx_hash);
+    info!("   gas used: {}", receipt.gas_used.unwrap_or_default());
+    info!("   block:    {}", receipt.block_number.unwrap_or_default());
+
     Ok(tx_hash)
+}
+
+/// Decode a hex string (with or without 0x prefix) into bytes.
+fn decode_hex(s: &str) -> anyhow::Result<Vec<u8>> {
+    let s = s.trim_start_matches("0x");
+    if s.len() % 2 != 0 {
+        return Err(anyhow::anyhow!("Odd-length hex string"));
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&s[i..i + 2], 16)
+                .map_err(|e| anyhow::anyhow!("Invalid hex byte at {}: {}", i, e))
+        })
+        .collect()
 }
 
 // Check registration status on blockchain
@@ -337,14 +440,13 @@ async fn submit_to_blockchain(
     let nullifier = parse_public_signal(&proof_request.public_signals, 3)?;
     let public_signals: [U256; 4] = [commitment, app_address, user_wallet, nullifier];
 
-    info!("✅ Parsed proof components:");
-    info!("   a: [{}, {}]", a[0], a[1]);
-    info!("   b: [[{}, {}], [{}, {}]]", b[0][0], b[0][1], b[1][0], b[1][1]);
-    info!("   c: [{}, {}]", c[0], c[1]);
-    info!("   commitment: {}", commitment);
+    info!("✅ Parsed proof — calling verifyAndExecute:");
+    info!("   commitment:  {}", commitment);
     info!("   app_address: {}", app_address);
     info!("   user_wallet: {}", user_wallet);
-    info!("   nullifier: {}", nullifier);
+    info!("   nullifier:   {}", nullifier);
+    info!("   a[0]: {}...", format!("{}", a[0]).chars().take(20).collect::<String>());
+    info!("   c[0]: {}...", format!("{}", c[0]).chars().take(20).collect::<String>());
 
     // Create contract instance
     let contract = PrivacyShield::new(state.contract_address, state.client.clone());

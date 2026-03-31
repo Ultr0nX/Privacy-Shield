@@ -10,6 +10,13 @@ export const useWallet = () => {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState(null);
   
+  const IDENTITY_SIGN_MESSAGE = 'PrivacyShield Identity Enrollment v1';
+
+  const signForIdentity = useCallback(async () => {
+    if (!signer) throw new Error('Wallet not connected.');
+    return signer.signMessage(IDENTITY_SIGN_MESSAGE);
+  }, [signer]);
+
   const connect = useCallback(async () => {
     setConnecting(true);
     setError(null);
@@ -32,7 +39,7 @@ export const useWallet = () => {
     setSigner(null);
     setError(null);
   }, []);
-  
+
   return {
     account,
     signer,
@@ -40,6 +47,7 @@ export const useWallet = () => {
     error,
     connect,
     disconnect,
+    signForIdentity,
     isConnected: !!account
   };
 };

@@ -32,16 +32,16 @@ export const useRegistration = (commitment) => {
   }, [commitment]);
   
   // Register identity on blockchain
-  const register = useCallback(async () => {
-    if (!commitment) {
-      throw new Error("No commitment available");
-    }
-    
+  const register = useCallback(async (helperData, userWallet) => {
+    if (!commitment) throw new Error("No commitment available");
+    if (!helperData) throw new Error("No helper data available — complete face scan first");
+    if (!userWallet) throw new Error("No wallet address — connect wallet first");
+
     setRegistering(true);
     setError(null);
-    
+
     try {
-      const result = await registerIdentity(commitment);
+      const result = await registerIdentity(commitment, helperData, userWallet);
       
       if (result.success) {
         setIsRegistered(true);

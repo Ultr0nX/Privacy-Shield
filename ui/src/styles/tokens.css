@@ -1,0 +1,46 @@
+:root {
+  --bg-base:        #0A0F1E;
+  --bg-surface:     #0D1829;
+  --bg-elevated:    #0A1628;
+  --accent:         #14C4A2;
+  --accent-dim:     rgba(20,196,162,0.08);
+  --accent-border:  rgba(20,196,162,0.19);
+  --accent-mid:     #0E7C6A;
+  --text-primary:   #E0FBF4;
+  --text-secondary: #A0C8B0;
+  --text-muted:     #6C8EAD;
+  --border-base:    #1a2a3a;
+  --border-accent:  rgba(20,196,162,0.25);
+  --danger:         #E24B4A;
+  --danger-dim:     rgba(226,75,74,0.08);
+  --warn:           #EF9F27;
+  --purple:         #A97EF5;
+  --purple-dim:     rgba(169,126,245,0.08);
+}
+
+/* Scan ring animation */
+@keyframes scanRotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes scanPulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.03); }
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+@keyframes heroRing {
+  0%   { transform: scale(1);    opacity: 0.15; }
+  50%  { transform: scale(1.08); opacity: 0.35; }
+  100% { transform: scale(1);    opacity: 0.15; }
+}

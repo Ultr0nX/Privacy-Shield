@@ -154,14 +154,16 @@ export const validateFaceQuality = (landmarks, imageWidth = 640, imageHeight = 4
   }
   
   // 3. Check depth variance (liveness / anti-spoofing)
+  // Note: MacBook FaceTime cameras report lower z-variance than external webcams.
+  // Thresholds are kept lenient to avoid blocking legitimate users; the 4-second
+  // liveness challenge (blink + tilt + smile) is the primary anti-spoofing layer.
   const depthVariance = calculateDepthVariance(landmarks);
-  
-  if (depthVariance < 0.0005) {
+
+  if (depthVariance < 0.0001) {
     issues.push("Possible 2D photo detected");
-    score -= 40;
-  } else if (depthVariance < 0.001) {
-    issues.push("Low depth variation - ensure proper lighting");
-    score -= 20;
+    score -= 25;
+  } else if (depthVariance < 0.0003) {
+    score -= 10;
   }
   
   // 4. Check eyes open (basic liveness)
