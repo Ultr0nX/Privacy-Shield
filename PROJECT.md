@@ -424,11 +424,86 @@ This prevents a different person from successfully recovering a registered walle
 - Foundry (`curl -L https://foundry.paradigm.xyz | bash`)
 - MetaMask browser extension
 
+---
+
+### Teammate Quickstart (clone → run in 5 minutes)
+
+> **Branch:** `final` — always pull from this branch.
+
+#### Step 1 — Clone the repo
+
+```bash
+git clone https://github.com/Ultr0nX/Identity-protocol.git
+cd Identity-protocol
+git checkout final
+```
+
+#### Step 2 — Start the Frontend
+
+```bash
+cd ui
+npm install
+npm start
+```
+
+- Opens at **http://localhost:3000**
+- Automatically copies `circuit.wasm` to `ui/public/` on start
+
+#### Step 3 — Start the Relayer (in a new terminal)
+
+```bash
+cd relayer
+cp .env.example .env
+```
+
+Now open `relayer/.env` and fill in:
+
+```env
+PRIVATE_KEY=0x<your_funded_sepolia_wallet_private_key>
+RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<your_alchemy_key>
+CONTRACT_ADDRESS=0x99C9aBccAF1aed42Db8eE5e07d313EF8A470c79B
+```
+
+Then run:
+
+```bash
+cargo run
+```
+
+- Relayer starts at **http://localhost:3001**
+- Uses Sepolia testnet (chainId 11155111)
+- Contract is already deployed — no redeployment needed
+
+#### Step 3 (alternative) — If Rust/Cargo is not installed
+
+```bash
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# Then run the relayer
+cd relayer
+cargo run
+```
+
+#### Common issues
+
+| Problem | Fix |
+|---------|-----|
+| `git add .` hangs or `index.lock` error | Run `rm .git/index.lock` then retry |
+| Port 3001 already in use | Run `lsof -ti :3001 \| xargs kill -9` then `cargo run` |
+| MetaMask not connecting | Switch MetaMask network to **Sepolia Testnet** |
+| Face scan stuck at 0/30 | Allow camera permission in browser, use Chrome |
+| BCH mismatch on Verify | Open browser console → `localStorage.removeItem('privacy-shield.embedding-profile.v3')` → refresh |
+
+---
+
 ### 1. Clone and install
 
 ```bash
-git clone <repo>
+git clone https://github.com/Ultr0nX/Identity-protocol.git
 cd Identity-protocol
+git checkout final
 ```
 
 ### 2. Frontend
