@@ -1,0 +1,10 @@
+[
+  {
+    "wallet": "0x16d0be096d509d3bd93221b229bb29cddd05a22e",
+    "nullifier": "0x0d97924bcc9a0f8a32b1a6c5411a5eeebaf7fd4de44607c50f814d722ef1e562",
+    "tx_hash": "0x33ffbcbe864182295e3944db6d2912c710afa40978b926497029a9a684cc5219:10567804",
+    "timestamp_ms": 1775049649694,
+    "block": 10567804,
+    "reason": "nullifier_already_used"
+  }
+]

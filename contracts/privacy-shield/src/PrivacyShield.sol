@@ -134,9 +134,11 @@ contract PrivacyShield {
         );
 
         // 5. Mark verified.
+        // Use publicSignals[2] (user_wallet from ZK proof) not msg.sender (relayer).
+        address userWallet = address(uint160(publicSignals[2]));
         usedNullifiers[nullifier]          = true;
         verifiedIdentities[identityCommitment] = true;
-        emit ActionVerified(nullifier, msg.sender);
+        emit ActionVerified(nullifier, userWallet);
     }
 
     // ── view helpers ─────────────────────────────────────────────────────────

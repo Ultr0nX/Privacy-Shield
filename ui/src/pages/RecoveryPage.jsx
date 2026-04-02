@@ -269,7 +269,7 @@ export default function RecoveryPage() {
 }
 
 const s = {
-  page: { display:'flex', justifyContent:'center', padding:'32px 24px 80px' },
+  page: { display:'flex', justifyContent:'center', padding:'80px 24px 80px' },
   container: { width:'100%', maxWidth:520, display:'flex', flexDirection:'column', gap:16 },
   pageTitle: { textAlign:'center', marginBottom:8 },
   titleText: { fontSize:26, fontWeight:600, color:'var(--text-primary)', letterSpacing:'-0.01em', margin:'8px 0 10px' },

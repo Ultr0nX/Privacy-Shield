@@ -1,6 +1,6 @@
 //@info: axum is used for building the http server and handling requests
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::{Method, StatusCode},
     response::IntoResponse,
     routing::{get, post},
@@ -18,7 +18,8 @@ use ethers::{
 //@info: serde is used for serializing and deserializing json data in request and response payloads
 use serde::{Deserialize, Serialize};
 //@info: dotenv is used loading environment variables from a .env file for configuration
-use std::{net::SocketAddr, str::FromStr, sync::Arc};
+use std::{net::SocketAddr, str::FromStr, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
+use tokio::sync::Mutex;
 //@info: tower-http is used for handling cors(cross-origin resource sharing) to allow requests from the fronned ui
 use tower_http::cors::{Any, CorsLayer};
 //@info: tracing is used for logging important events and errors in the  relayer for better visiibility and debugging
@@ -63,12 +64,46 @@ struct RelayResponse {
     tx_hash: Option<String>,
 }
 
+//@info: A single logged replay attack attempt (reverted verify transaction)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ReplayAttempt {
+    wallet: String,
+    nullifier: String,
+    tx_hash: String,
+    timestamp_ms: u64,
+    block: u64,
+    reason: String,
+}
+
+const REPLAY_LOG_FILE: &str = "replay_attempts.json";
+
+fn load_replay_log() -> Vec<ReplayAttempt> {
+    std::fs::read_to_string(REPLAY_LOG_FILE)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+async fn save_replay_log(log: &[ReplayAttempt]) {
+    if let Ok(json) = serde_json::to_string_pretty(log) {
+        let _ = tokio::fs::write(REPLAY_LOG_FILE, json).await;
+    }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 // Application state
 #[derive(Clone)]
 struct AppState {
     //@info: ethers client is used for sending transactions and calling contract functions on the blockchain,it is wrapped in an arc for shared ownership across async handlers
     client: Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,
     contract_address: Address,
+    replay_log: Arc<Mutex<Vec<ReplayAttempt>>>,
 }
 
 // Define the contract ABI for PrivacyShield
@@ -154,10 +189,15 @@ async fn main() -> anyhow::Result<()> {
     let contract_address = Address::from_str(&contract_address_str)?;
     info!("✅ Contract address: {:?}", contract_address);
 
+    // Load persisted replay log
+    let replay_log = Arc::new(Mutex::new(load_replay_log()));
+    info!("📋 Loaded {} replay attempt(s) from disk", replay_log.lock().await.len());
+
     // Create application state
     let app_state = AppState {
         client,
         contract_address,
+        replay_log,
     };
 
     // Setup CORS
@@ -172,6 +212,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/relay", post(relay_proof))
         .route("/register", post(register_identity))
         .route("/check-registration", post(check_registration))
+        .route("/replay-attempts/:wallet", get(get_replay_attempts))
         .layer(cors)
         .with_state(app_state);
 
@@ -212,10 +253,11 @@ async fn relay_proof(
     info!("   pi_a[0] prefix: {}...", payload.proof.pi_a.first().map(|s| &s[..s.len().min(16)]).unwrap_or("?"));
     info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    // For Phase 1: We're working with mock data
-    // In Phase 2+, this will handle real ZK proofs
-    
-    match submit_to_blockchain(state, payload).await {
+    // Extract wallet + nullifier before moving payload into submit fn
+    let wallet_signal  = payload.public_signals.get(2).cloned().unwrap_or_default();
+    let nullifier_signal = payload.public_signals.get(3).cloned().unwrap_or_default();
+
+    match submit_to_blockchain(state.clone(), payload).await {
         Ok(tx_hash) => {
             info!("✅ Transaction successful: {}", tx_hash);
             (
@@ -228,6 +270,47 @@ async fn relay_proof(
             )
         }
         Err(e) => {
+            let err_str = format!("{}", e);
+
+            // Detect on-chain revert (nullifier already used → replay attack)
+            if let Some(tx_hash) = err_str.strip_prefix("REVERTED:") {
+                let tx_hash = tx_hash.to_string();
+                let block   = err_str
+                    .split(':').nth(2)
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+
+                // Convert U256 wallet decimal → 0x-prefixed address string
+                let wallet_addr = parse_hex_to_u256(&wallet_signal)
+                    .map(|w| format!("0x{:040x}", w))
+                    .unwrap_or(wallet_signal.clone());
+
+                let attempt = ReplayAttempt {
+                    wallet:       wallet_addr,
+                    nullifier:    nullifier_signal,
+                    tx_hash:      tx_hash.clone(),
+                    timestamp_ms: now_ms(),
+                    block,
+                    reason:       "nullifier_already_used".to_string(),
+                };
+
+                info!("🚨 REPLAY ATTACK BLOCKED — wallet: {}, tx: {}", attempt.wallet, tx_hash);
+
+                let mut log = state.replay_log.lock().await;
+                log.push(attempt);
+                save_replay_log(&log).await;
+                drop(log);
+
+                return (
+                    StatusCode::OK,
+                    Json(RelayResponse {
+                        success: false,
+                        message: "Proof rejected: nullifier already used — replay attack blocked".to_string(),
+                        tx_hash: Some(tx_hash),
+                    }),
+                );
+            }
+
             error!("❌ Failed to submit proof: {:?}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -370,7 +453,8 @@ async fn submit_registration(
     let contract = PrivacyShield::new(state.contract_address, state.client.clone());
     info!("📝 Calling registerIdentity on contract...");
 
-    let tx_call   = contract.register_identity(user_wallet, commitment, helper_data);
+    let tx_call   = contract.register_identity(user_wallet, commitment, helper_data)
+        .gas(500_000u64);
     let pending_tx = tx_call.send().await?;
 
     info!("⏳ Transaction sent, waiting for confirmation...");
@@ -454,8 +538,9 @@ async fn submit_to_blockchain(
     info!("📝 Sending transaction to verifyAndExecute function on contract...");
     
     // Create the contract call
-    let tx_call = contract.verify_and_execute(a, b, c, public_signals);
-    
+    let tx_call = contract.verify_and_execute(a, b, c, public_signals)
+        .gas(800_000u64);
+
     // Send actual transaction with real proof data
     let pending_tx = tx_call.send().await?;
     
@@ -464,11 +549,24 @@ async fn submit_to_blockchain(
     // Wait for transaction receipt
     let receipt = pending_tx.await?.ok_or_else(|| anyhow::anyhow!("Transaction dropped from mempool"))?;
     
-    let tx_hash = format!("0x{:x}", receipt.transaction_hash);
+    let tx_hash   = format!("0x{:x}", receipt.transaction_hash);
+    let block_num = receipt.block_number.unwrap_or_default().as_u64();
+    let gas_used  = receipt.gas_used.unwrap_or_default();
+    let status    = receipt.status.unwrap_or_default().as_u64();
+
+    info!("📊 Gas used: {}", gas_used);
+    info!("📦 Block number: {}", block_num);
+
+    // status == 0 means the transaction was included but REVERTED on-chain
+    if status == 0 {
+        info!("🚨 Transaction REVERTED on-chain: {}", tx_hash);
+        info!("   This is likely a replay attack — nullifier already used.");
+        // Encode tx_hash and block into the error so relay_proof can log it
+        return Err(anyhow::anyhow!("REVERTED:{}:{}", tx_hash, block_num));
+    }
+
     info!("✅ Transaction confirmed: {}", tx_hash);
-    info!("📊 Gas used: {}", receipt.gas_used.unwrap_or_default());
-    info!("📦 Block number: {}", receipt.block_number.unwrap_or_default());
-    
+
     // Log events emitted
     if !receipt.logs.is_empty() {
         info!("📢 Events emitted: {} logs", receipt.logs.len());
@@ -476,7 +574,7 @@ async fn submit_to_blockchain(
             info!("   Log {}: {} topics", i, log.topics.len());
         }
     }
-    
+
     Ok(tx_hash)
 }
 
@@ -531,6 +629,21 @@ fn parse_hex_to_u256(s: &str) -> anyhow::Result<U256> {
         U256::from_dec_str(s)
             .map_err(|e| anyhow::anyhow!("Failed to parse decimal '{}': {}", s, e))
     }
+}
+
+// GET /replay-attempts/:wallet — returns all logged replay attempts for a given wallet
+async fn get_replay_attempts(
+    State(state): State<AppState>,
+    Path(wallet): Path<String>,
+) -> impl IntoResponse {
+    let wallet_lower = wallet.to_lowercase();
+    let log = state.replay_log.lock().await;
+    let attempts: Vec<&ReplayAttempt> = log
+        .iter()
+        .filter(|a| a.wallet.to_lowercase() == wallet_lower)
+        .collect();
+    info!("🔍 Replay attempts query for {} → {} result(s)", wallet_lower, attempts.len());
+    Json(serde_json::json!({ "attempts": attempts }))
 }
 
 // Helper module for random transaction hash (fallback mode only)

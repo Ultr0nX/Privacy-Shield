@@ -64,7 +64,7 @@ const ABI = [
   }
 ];
 
-export const CONTRACT_ADDRESS = "0x99C9aBccAF1aed42Db8eE5e07d313EF8A470c79B";
+export const CONTRACT_ADDRESS = "0x6185657b7c3c6d68dbaeb3ac727984c6c9be0562";
 
 // ── write helpers (go through relayer — user pays no gas) ────────────────────
 

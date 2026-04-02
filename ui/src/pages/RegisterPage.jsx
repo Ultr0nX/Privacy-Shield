@@ -341,7 +341,7 @@ export default function RegisterPage() {
 }
 
 const s = {
-  page: { display:'flex', justifyContent:'center', padding:'32px 24px 80px' },
+  page: { display:'flex', justifyContent:'center', padding:'80px 24px 80px' },
   container: { width:'100%', maxWidth:520 },
 
   pageTitle: { textAlign:'center', marginBottom:32 },

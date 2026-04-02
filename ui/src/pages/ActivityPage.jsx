@@ -3,6 +3,8 @@ import { ethers } from 'ethers';
 import { useWalletContext } from '../context/WalletContext';
 import { CONTRACT_ADDRESS } from '../utils/contract';
 
+// Avoids querying all of Sepolia from block 0 — set to ~contract deploy block
+
 const ABI = [
   { type:'event', name:'IdentityRegistered', inputs:[
     {name:'registrant',type:'address',indexed:true},{name:'commitment',type:'uint256',indexed:true}],anonymous:false },
@@ -17,6 +19,7 @@ export default function ActivityPage() {
   const [sort, setSort] = useState('newest');
   const [loading, setLoading] = useState(false);
   const [live, setLive] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
   const contractRef = useRef(null);
 
   const loadEvents = useCallback(async () => {
@@ -27,10 +30,19 @@ export default function ActivityPage() {
       const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
       contractRef.current = contract;
 
-      const [regEvts, verEvts] = await Promise.all([
-        contract.queryFilter(contract.filters.IdentityRegistered(wallet.account), 0, 'latest'),
-        contract.queryFilter(contract.filters.ActionVerified(null, wallet.account), 0, 'latest'),
+      const addrLower = wallet.account.toLowerCase();
+      const checksumAddr = ethers.utils.getAddress(wallet.account);
+
+      const currentBlock = await provider.getBlockNumber();
+      const fromBlock = Math.max(0, currentBlock - 50000);
+
+      const [regEvts, allVerEvts] = await Promise.all([
+        contract.queryFilter(contract.filters.IdentityRegistered(checksumAddr), fromBlock, 'latest'),
+        contract.queryFilter(contract.filters.ActionVerified(), fromBlock, 'latest'),
       ]);
+      const verEvts = allVerEvts.filter(ev =>
+        ev.args.user.toLowerCase() === addrLower
+      );
 
       const enriched = await Promise.all([
         ...regEvts.map(async ev => {
@@ -47,8 +59,26 @@ export default function ActivityPage() {
         }),
       ]);
 
-      setEvents(enriched);
+      // Fetch replay attempts from relayer (reverted on-chain txs)
+      let replayEvts = [];
+      try {
+        const res = await fetch(`http://localhost:3001/replay-attempts/${wallet.account}`);
+        if (res.ok) {
+          const data = await res.json();
+          replayEvts = (data.attempts || []).map(a => ({
+            type: 'ReplayBlocked',
+            block: a.block,
+            tx: a.tx_hash,
+            nullifier: a.nullifier,
+            commitment: null,
+            timestamp: a.timestamp_ms,
+          }));
+        }
+      } catch (_) { /* relayer offline — skip */ }
+
+      setEvents([...enriched, ...replayEvts]);
       setLive(true);
+      setLastUpdated(new Date());
 
       // Live listener
       contract.on('IdentityRegistered', (registrant, commitment, ev) => {
@@ -74,10 +104,12 @@ export default function ActivityPage() {
 
   useEffect(() => {
     loadEvents();
+    // Poll every 15s — MetaMask's provider doesn't support WebSocket subscriptions
+    // reliably, so re-query is more dependable than contract.on()
+    const interval = setInterval(loadEvents, 15_000);
     return () => {
-      if (contractRef.current) {
-        contractRef.current.removeAllListeners();
-      }
+      clearInterval(interval);
+      if (contractRef.current) contractRef.current.removeAllListeners();
     };
   }, [loadEvents]);
 
@@ -116,13 +148,16 @@ export default function ActivityPage() {
         {/* Filter bar */}
         <div style={s.filterBar}>
           <div style={s.filterGroup}>
-            {['All','IdentityRegistered','ActionVerified'].map(f => (
+            {['All','IdentityRegistered','ActionVerified','ReplayBlocked'].map(f => (
               <button
                 key={f}
                 style={{ ...s.filterBtn, ...(filter===f ? s.filterBtnActive : {}) }}
                 onClick={() => setFilter(f)}
               >
-                {f === 'All' ? 'ALL' : f === 'IdentityRegistered' ? 'REGISTERED' : 'VERIFIED'}
+                {f === 'All' ? 'ALL'
+                  : f === 'IdentityRegistered' ? 'REGISTERED'
+                  : f === 'ActionVerified' ? 'VERIFIED'
+                  : 'REPLAY BLOCKED'}
               </button>
             ))}
           </div>
@@ -132,12 +167,26 @@ export default function ActivityPage() {
             <button style={{ ...s.filterBtn, ...(sort==='oldest' ? s.filterBtnActive : {}) }}
               onClick={() => setSort('oldest')}>OLDEST</button>
           </div>
-          {live && (
-            <div style={s.liveChip}>
-              <span className="status-dot blink" />
-              Listening for new events...
-            </div>
-          )}
+          <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:10 }}>
+            {lastUpdated && (
+              <span style={{ fontSize:9, color:'var(--text-muted)', letterSpacing:'0.06em' }}>
+                Updated {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+            <button
+              style={{ ...s.filterBtn, border:'0.5px solid var(--border-base)', borderRadius:6, padding:'5px 10px' }}
+              onClick={loadEvents}
+              disabled={loading}
+            >
+              {loading ? '...' : '↻ REFRESH'}
+            </button>
+            {live && (
+              <div style={s.liveChip}>
+                <span className="status-dot blink" />
+                Auto-refreshing
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Timeline */}
@@ -155,8 +204,14 @@ export default function ActivityPage() {
             {filtered.map((ev, i) => (
               <div key={`${ev.tx}-${i}`} className="card" style={s.eventCard}>
                 <div style={s.eventHeader}>
-                  <span className={`badge ${ev.type === 'IdentityRegistered' ? 'badge-accent' : 'badge-purple'}`}>
-                    {ev.type === 'IdentityRegistered' ? 'IDENTITY REGISTERED' : 'PROOF VERIFIED'}
+                  <span className={`badge ${
+                    ev.type === 'IdentityRegistered' ? 'badge-accent'
+                    : ev.type === 'ActionVerified' ? 'badge-purple'
+                    : 'badge-danger'
+                  }`}>
+                    {ev.type === 'IdentityRegistered' ? 'IDENTITY REGISTERED'
+                      : ev.type === 'ActionVerified' ? 'PROOF VERIFIED'
+                      : '🚨 REPLAY BLOCKED'}
                   </span>
                   <span style={s.eventTime}>
                     {ev.timestamp
@@ -203,7 +258,7 @@ export default function ActivityPage() {
 }
 
 const s = {
-  page: { display:'flex', justifyContent:'center', padding:'32px 24px 80px' },
+  page: { display:'flex', justifyContent:'center', padding:'80px 24px 80px' },
   container: { width:'100%', maxWidth:700, display:'flex', flexDirection:'column', gap:16 },
   centerWrap: { maxWidth:420, margin:'80px auto 0' },
   pageTitle: { textAlign:'center', marginBottom:8 },

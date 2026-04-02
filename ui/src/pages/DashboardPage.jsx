@@ -32,11 +32,22 @@ export default function DashboardPage() {
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
 
-      const [onChainProfile, regEvts, verEvts] = await Promise.all([
+      const addrLower = wallet.account.toLowerCase();
+      const checksumAddr = ethers.utils.getAddress(wallet.account);
+
+      // Mirror HomePage's proven approach: no address filter on ActionVerified,
+      // filter client-side. Alchemy silently drops sparse topic filters (null, addr).
+      const currentBlock = await provider.getBlockNumber();
+      const fromBlock = Math.max(0, currentBlock - 50000);
+
+      const [onChainProfile, regEvts, allVerEvts] = await Promise.all([
         getProfileFromChain(wallet.account),
-        contract.queryFilter(contract.filters.IdentityRegistered(wallet.account), 0, 'latest'),
-        contract.queryFilter(contract.filters.ActionVerified(null, wallet.account), 0, 'latest'),
+        contract.queryFilter(contract.filters.IdentityRegistered(checksumAddr), fromBlock, 'latest'),
+        contract.queryFilter(contract.filters.ActionVerified(), fromBlock, 'latest'),
       ]);
+      const verEvts = allVerEvts.filter(ev =>
+        ev.args.user.toLowerCase() === addrLower
+      );
 
       setProfile(onChainProfile);
 
@@ -63,7 +74,11 @@ export default function DashboardPage() {
     }
   }, [wallet.account, wallet.isConnected]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 15_000);
+    return () => clearInterval(interval);
+  }, [loadData]);
 
   if (!wallet.isConnected) {
     return (
@@ -253,6 +268,9 @@ export default function DashboardPage() {
           <button className="btn-secondary" style={{ flex:1 }} onClick={() => navigate('/verify')}>
             VERIFY AGAIN
           </button>
+          <button className="btn-secondary" style={{ flex:1 }} onClick={loadData} disabled={loading}>
+            {loading ? 'REFRESHING...' : '↻ REFRESH'}
+          </button>
           <button className="btn-secondary" style={{ flex:1 }} onClick={() => navigate('/activity')}>
             VIEW ACTIVITY
           </button>
@@ -263,7 +281,7 @@ export default function DashboardPage() {
 }
 
 const s = {
-  page: { display:'flex', justifyContent:'center', padding:'32px 24px 80px' },
+  page: { display:'flex', justifyContent:'center', padding:'80px 24px 80px' },
   container: { width:'100%', maxWidth:760, display:'flex', flexDirection:'column', gap:16 },
   centerWrap: { maxWidth:420, margin:'80px auto 0' },
   pageTitle: { textAlign:'center', marginBottom:24 },

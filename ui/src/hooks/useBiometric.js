@@ -7,8 +7,10 @@ import { getProfileFromChain } from '../utils/contract';
 
 // v3: new contract 0x99C9... + random-secret key derivation (wallet+face both required)
 // Bumping version clears stale v2 profiles that were enrolled against the old contract.
-const PROFILE_STORAGE_KEY = 'privacy-shield.embedding-profile.v3';
-const OLD_KEYS = ['privacy-shield.embedding-profile.v2', 'privacy-shield.embedding-profile.v1'];
+// Profile key is scoped per wallet so multiple users on the same device don't overwrite
+// each other's face templates (which would break the cosine pre-gate).
+const profileKey = (addr) => `privacy-shield.embedding-profile.v3.${(addr || '').toLowerCase()}`;
+const OLD_KEYS = ['privacy-shield.embedding-profile.v2', 'privacy-shield.embedding-profile.v1', 'privacy-shield.embedding-profile.v3'];
 OLD_KEYS.forEach(k => localStorage.removeItem(k));
 const MIN_QUALITY_SCORE = 70;
 const SAMPLE_INTERVAL_MS = 200;
@@ -98,7 +100,7 @@ export const useBiometric = (scanThreshold = 20, getWalletSeed = null, walletAdd
   const [status,         setStatus]         = useState('Idle');
   const [verified,       setVerified]       = useState(false);
   const [recoveryErrors, setRecoveryErrors] = useState(null);
-  const [hasEnrolled,    setHasEnrolled]    = useState(() => Boolean(localStorage.getItem(PROFILE_STORAGE_KEY)));
+  const [hasEnrolled,    setHasEnrolled]    = useState(() => Boolean(localStorage.getItem(profileKey(walletAddress))));
 
   const poseidonRef         = useRef(null);
   const descriptorBufferRef = useRef([]);
@@ -127,14 +129,14 @@ export const useBiometric = (scanThreshold = 20, getWalletSeed = null, walletAdd
   const loadStoredProfile = useCallback(() => {
     if (profileRef.current) return profileRef.current;
     try {
-      const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+      const raw = localStorage.getItem(profileKey(walletAddress));
       if (!raw) { setHasEnrolled(false); return null; }
       const parsed = JSON.parse(raw);
       if (!parsed.helperData) { setHasEnrolled(false); return null; }
       profileRef.current = parsed;
       return parsed;
     } catch {
-      localStorage.removeItem(PROFILE_STORAGE_KEY);
+      localStorage.removeItem(profileKey(walletAddress));
       setHasEnrolled(false);
       return null;
     }
@@ -163,7 +165,7 @@ export const useBiometric = (scanThreshold = 20, getWalletSeed = null, walletAdd
 
   // ── clear profile entirely (switch to a different person) ────────────────
   const clearProfile = useCallback(() => {
-    localStorage.removeItem(PROFILE_STORAGE_KEY);
+    localStorage.removeItem(profileKey(walletAddress));
     profileRef.current = null;
     walletSigRef.current = null;
     setHasEnrolled(false);
@@ -189,7 +191,7 @@ export const useBiometric = (scanThreshold = 20, getWalletSeed = null, walletAdd
       Array.from(averagedDescriptor).slice(0, 8).map(v => v.toFixed(5)).join(', '));
     const descNorm = Math.sqrt(Array.from(averagedDescriptor).reduce((s, x) => s + x * x, 0));
     console.log('%c[IDENTITY] descriptor norm :', 'color:#888', descNorm.toFixed(6));
-    console.log('%c[IDENTITY] localStorage has profile:', 'color:#888', Boolean(localStorage.getItem(PROFILE_STORAGE_KEY)));
+    console.log('%c[IDENTITY] localStorage has profile:', 'color:#888', Boolean(localStorage.getItem(profileKey(walletAddress))));
 
     // ── get wallet signature (needed for both enrolment and recovery) ────────
     if (!getWalletSeed) {
@@ -215,7 +217,7 @@ export const useBiometric = (scanThreshold = 20, getWalletSeed = null, walletAdd
       try {
         const chainProfile = await getProfileFromChain(walletAddress);
         if (chainProfile) {
-          storedProfile = { helperData: chainProfile.helperDataHex, descriptorTemplate: null };
+          storedProfile = { helperData: chainProfile.helperDataHex, descriptorTemplate: null, onChainCommitment: chainProfile.commitment };
           profileSource = 'on-chain';
           console.log('%c[IDENTITY] ⛓  On-chain profile FOUND — helperData loaded (no descriptorTemplate)', 'color:#facc15;font-weight:bold');
           console.warn('%c[IDENTITY] ⚠️  Cosine check SKIPPED — no template to compare against. BCH is the only gate.', 'color:#ff8800;font-weight:bold');
@@ -300,7 +302,7 @@ export const useBiometric = (scanThreshold = 20, getWalletSeed = null, walletAdd
           helperData:         storedProfile.helperData,
           descriptorTemplate: Array.from(averagedDescriptor),
         };
-        localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profileRef.current));
+        localStorage.setItem(profileKey(walletAddress), JSON.stringify(profileRef.current));
         setHasEnrolled(true);
         console.log('%c[IDENTITY] Saved descriptorTemplate to localStorage for future cosine checks', 'color:#888');
       }
@@ -318,7 +320,7 @@ export const useBiometric = (scanThreshold = 20, getWalletSeed = null, walletAdd
         helperData:         enrolled.helperDataHex,
         descriptorTemplate: Array.from(averagedDescriptor),
       };
-      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profileRef.current));
+      localStorage.setItem(profileKey(walletAddress), JSON.stringify(profileRef.current));
       setHasEnrolled(true);
       setHelperDataHex(enrolled.helperDataHex);
     }
@@ -333,6 +335,24 @@ export const useBiometric = (scanThreshold = 20, getWalletSeed = null, walletAdd
 
     console.log('%c[IDENTITY] walletKey prefix  : 0x' + walletKeyBigInt.toString(16).padStart(64,'0').slice(0,16) + '...', 'color:#888');
     console.log('%c[IDENTITY] COMMITMENT (full) :', 'color:#00ff88;font-weight:bold', publicCommitment);
+
+    // ── SECURITY GATE: on-chain path — verify derived commitment matches chain ──
+    // BCH alone can succeed for a different person (≤30 bit errors).
+    // Compare the derived commitment against what's stored on-chain so that
+    // a different face that happens to pass BCH is blocked here.
+    if (profileSource === 'on-chain' && storedProfile.onChainCommitment) {
+      if (publicCommitment !== storedProfile.onChainCommitment) {
+        const errMsg =
+          '🚫 This wallet is already registered to a different person.\n\n' +
+          'Each wallet can only hold ONE biometric identity.\n' +
+          'Please use a different wallet to register a new identity.';
+        console.error('[IDENTITY] ❌ COMMITMENT MISMATCH: BCH passed but derived commitment !== on-chain commitment');
+        console.error('[IDENTITY]    derived :', publicCommitment);
+        console.error('[IDENTITY]    on-chain:', storedProfile.onChainCommitment);
+        throw new Error(errMsg);
+      }
+      console.log('%c[IDENTITY] ✅ COMMITMENT VERIFIED — derived commitment matches on-chain record', 'color:#00ff88;font-weight:bold');
+    }
 
     console.log(`[PrivacyShield] ${isEnrolment ? 'ENROLLED' : 'RECOVERED'} — commitment: ${publicCommitment.slice(0,12)}... errors: ${errors}`);
 

@@ -38,7 +38,41 @@ a:hover { color: var(--text-primary); }
 .page-wrap {
   min-height: 100vh;
   background: var(--bg-base);
-  padding-top: 60px; /* navbar height */
+  padding-top: 60px; /* navbar height — inline styles add their own top spacing on top of this */
+}
+
+/* ─── Responsive navbar ────────────────────────────────────────────── */
+.nav-links-desktop { display: flex; }
+.nav-hamburger     { display: none; }
+.nav-mobile-drawer {
+  display: none;
+  position: fixed;
+  top: 60px;
+  left: 0;
+  right: 0;
+  background: var(--bg-surface);
+  border-bottom: 0.5px solid var(--border-base);
+  padding: 16px 24px;
+  z-index: 99;
+  flex-direction: column;
+  gap: 0;
+}
+.nav-mobile-drawer.open { display: flex; }
+.nav-mobile-link {
+  padding: 12px 0;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-bottom: 0.5px solid var(--border-base);
+  transition: color 0.15s;
+}
+.nav-mobile-link:last-child { border-bottom: none; }
+.nav-mobile-link.active { color: var(--accent); }
+
+@media (max-width: 768px) {
+  .nav-links-desktop { display: none; }
+  .nav-hamburger     { display: flex; }
 }
 
 /* Shared card styles */

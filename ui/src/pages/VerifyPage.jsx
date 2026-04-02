@@ -8,7 +8,7 @@ import { useBiometric } from '../hooks/useBiometric';
 import { useRegistration } from '../hooks/useRegistration';
 import { calculateNullifier, formatProofForChain, generateProof, prepareCircuitInputs } from '../services/proofService';
 import { submitProof } from '../services/relayerService';
-import { CONTRACT_ADDRESS } from '../utils/contract';
+import { CONTRACT_ADDRESS, getProfileFromChain } from '../utils/contract';
 
 const PROOF_STEPS = [
   'Computing secretId...',
@@ -31,6 +31,29 @@ export default function VerifyPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [bchFailed, setBchFailed] = useState(false);
+
+  // 'checking' | 'fresh-device' | 'confirmed' | 'own-device'
+  const [deviceState, setDeviceState] = useState('checking');
+
+  // Detect fresh-device scenario: registered on-chain but no localStorage template
+  useEffect(() => {
+    if (!wallet.isConnected || !wallet.account) return;
+    setDeviceState('checking');
+    getProfileFromChain(wallet.account).then(profile => {
+      if (!profile) {
+        // Not registered — let RegisterPage handle this
+        setDeviceState('own-device');
+        return;
+      }
+      // Registered on-chain. Is there a local face template?
+      if (biometric.hasEnrolled) {
+        setDeviceState('own-device');
+      } else {
+        // Fresh device — no local template, on-chain recovery path will skip cosine check
+        setDeviceState('fresh-device');
+      }
+    }).catch(() => setDeviceState('own-device'));
+  }, [wallet.isConnected, wallet.account, biometric.hasEnrolled]);
 
   useEffect(() => { biometric.initializePoseidon(); }, [biometric.initializePoseidon]);
 
@@ -93,7 +116,7 @@ export default function VerifyPage() {
 
       // 3. Generate Groth16 proof
       const t2 = performance.now();
-      await biometric.initializePoseidon();
+      biometric.initializePoseidon();
       const nullifier = calculateNullifier(biometric.secretId, CONTRACT_ADDRESS, wallet.account);
       setNullifierDisplay(`${nullifier.slice(0,10)}...${nullifier.slice(-6)}`);
       const zkInputs = prepareCircuitInputs(
@@ -132,6 +155,84 @@ export default function VerifyPage() {
               <div style={s.cardSub}>Connect your wallet to start the verification flow.</div>
               <button className="btn-primary" style={{ marginTop:20 }} onClick={handleConnect}>
                 CONNECT WALLET
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fresh-device gate — shown before face scanner activates
+  if (deviceState === 'checking') {
+    return (
+      <div className="page-wrap" style={s.page}>
+        <div style={s.container}>
+          <div className="card" style={{ padding:32, textAlign:'center' }}>
+            <div style={{ fontSize:11, color:'var(--text-muted)' }}>
+              <span className="status-dot blink" style={{ marginRight:8 }} />
+              Checking identity status...
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (deviceState === 'fresh-device') {
+    return (
+      <div className="page-wrap" style={s.page}>
+        <div style={s.container}>
+          <div style={s.pageTitle}>
+            <div className="label">VERIFY</div>
+            <h1 style={s.titleText}>Verify Your Identity</h1>
+          </div>
+
+          <div className="card" style={{ overflow:'hidden' }}>
+            <div className="card-header">
+              <div className="card-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" strokeWidth="1.5">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <div>
+                <div style={{ ...s.cardTitle, color:'var(--warn)' }}>FRESH DEVICE DETECTED</div>
+                <div style={s.cardSub}>This wallet has an existing on-chain identity</div>
+              </div>
+            </div>
+
+            <div style={{ padding:'24px', display:'flex', flexDirection:'column', gap:16 }}>
+              <div style={s.warnBox}>
+                <div style={s.warnTitle}>⚠️ WALLET ALREADY REGISTERED</div>
+                <div style={s.warnDesc}>
+                  This wallet <strong style={{ color:'var(--text-primary)' }}>
+                    {wallet.account.slice(0,6)}…{wallet.account.slice(-4)}
+                  </strong> has a biometric identity stored on-chain, but no face data found on this device.
+                </div>
+                <div style={s.warnDesc}>
+                  Only the person who originally registered this wallet can verify. If you are NOT the owner of this wallet, you will fail the biometric check.
+                </div>
+              </div>
+
+              <div style={s.ownershipBox}>
+                <div style={s.ownershipTitle}>ONLY PROCEED IF YOU:</div>
+                <div style={s.ownershipItem}>✓ Own the private key to this wallet</div>
+                <div style={s.ownershipItem}>✓ Are the person who registered this identity</div>
+                <div style={s.ownershipItem}>✓ Are on a new device or cleared browser data</div>
+              </div>
+
+              <button
+                className="btn-primary"
+                onClick={() => setDeviceState('confirmed')}
+              >
+                I AM THE WALLET OWNER — PROCEED
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => navigate('/')}
+              >
+                USE A DIFFERENT WALLET
               </button>
             </div>
           </div>
@@ -365,7 +466,7 @@ export default function VerifyPage() {
 }
 
 const s = {
-  page: { display:'flex', justifyContent:'center', padding:'32px 24px 80px' },
+  page: { display:'flex', justifyContent:'center', padding:'80px 24px 80px' },
   container: { width:'100%', maxWidth:520 },
   pageTitle: { textAlign:'center', marginBottom:32 },
   titleText: { fontSize:26, fontWeight:600, color:'var(--text-primary)', letterSpacing:'-0.01em', margin:'8px 0 10px' },
@@ -419,6 +520,20 @@ const s = {
   },
   bchFailTitle: { fontSize:11, fontWeight:600, color:'var(--danger)', letterSpacing:'0.06em' },
   bchFailDesc: { fontSize:11, color:'var(--text-secondary)', lineHeight:1.6 },
+  warnBox: {
+    background:'rgba(239,159,39,0.06)', border:'0.5px solid rgba(239,159,39,0.3)',
+    borderLeft:'3px solid var(--warn)',
+    borderRadius:'0 8px 8px 0', padding:'14px 16px',
+    display:'flex', flexDirection:'column', gap:8,
+  },
+  warnTitle: { fontSize:11, fontWeight:600, color:'var(--warn)', letterSpacing:'0.06em' },
+  warnDesc: { fontSize:11, color:'var(--text-secondary)', lineHeight:1.7 },
+  ownershipBox: {
+    background:'var(--bg-elevated)', border:'0.5px solid var(--border-base)',
+    borderRadius:8, padding:'14px 16px', display:'flex', flexDirection:'column', gap:6,
+  },
+  ownershipTitle: { fontSize:9, letterSpacing:'0.1em', color:'var(--text-muted)', textTransform:'uppercase', marginBottom:4 },
+  ownershipItem: { fontSize:11, color:'var(--accent)' },
   clearBtn: {
     padding:'9px 14px', borderRadius:6,
     background:'var(--danger)', border:'none', color:'#fff',
