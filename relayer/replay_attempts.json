@@ -6,5 +6,21 @@
     "timestamp_ms": 1775049649694,
     "block": 10567804,
     "reason": "nullifier_already_used"
+  },
+  {
+    "wallet": "0xdb414917bc2db7e19ed655c6feb5de7b79a6a360",
+    "nullifier": "0x2c568f343c823f5de3308403016ead707d01d386190875f569d39f384a3212a5",
+    "tx_hash": "0x7ed4e7e26ad8cafe694f3425429e75bb9be4a6d39c368875aa14b71155661b68:10572023",
+    "timestamp_ms": 1775101946396,
+    "block": 10572023,
+    "reason": "nullifier_already_used"
+  },
+  {
+    "wallet": "0xe783871b3cd11c944ae15a424e43115bd3aab059",
+    "nullifier": "0x05d0718e27de5eb656f43ba3afee4eebf8f82501869b0c3f1c81031cfb564150",
+    "tx_hash": "0x0f3aed682e91d42fe15c723b41d81282e4c10fd5e3ca6b5285dc8d8436f86513:10579662",
+    "timestamp_ms": 1775196461879,
+    "block": 10579662,
+    "reason": "nullifier_already_used"
   }
 ]
